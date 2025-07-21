@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ecstasy OS</title>
+    
+    <!-- Tailwind CSS for modern, responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet Map Library -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- face-api.js for Facial Recognition -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+
+    <!-- Our Custom Stylesheet (we will create this in the next step) -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <style>
+        /* A little helper style to prevent content flash before JS loads */
+        .view { display: none; }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200 font-sans">
+
+    <!-- 
+      VIEW 1: LOGIN PAGE
+      This is shown by default. JavaScript will hide it after a successful login.
+    -->
+    <div id="login-view" class="view">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="w-full max-w-md p-8 space-y-8 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl">
+                <div class="text-center">
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white">Ecstasy OS</h1>
+                    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Intelligent Operating System</p>
+                </div>
+                <form id="login-form" class="mt-8 space-y-6">
+                    <div id="login-error" class="p-3 text-sm text-center text-red-800 bg-red-100 dark:bg-red-900 dark:text-red-200 rounded-lg hidden"></div>
+                    <div class="relative">
+                        <input id="email-input" name="email" type="email" required value="employee@ecstasy.com" class="w-full px-4 py-3 text-gray-900 bg-gray-100 border-2 border-transparent rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Email address">
+                    </div>
+                    <div class="relative">
+                        <input id="password-input" name="password" type="password" required value="password" class="w-full px-4 py-3 text-gray-900 bg-gray-100 border-2 border-transparent rounded-lg dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Password">
+                    </div>
+                    <div>
+                        <button type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-transform transform hover:scale-105">
+                            Sign In
+                        </button>
+                    </div>
+                </form>
+                 <div class="text-xs text-center text-gray-500 dark:text-gray-400">
+                    <p>Use pre-filled credentials for different roles.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 
+      VIEW 2: MAIN APPLICATION SHELL
+      This is hidden by default and shown by JavaScript after login.
+    -->
+    <div id="app-shell" class="view">
+        <div class="flex h-screen">
+            <!-- Sidebar -->
+            <aside class="w-64 p-4 bg-white border-r border-gray-200 dark:bg-gray-800 dark:border-gray-700 flex-col md:flex hidden">
+                <!-- Sidebar content will be loaded by JS -->
+                <div id="sidebar-content"></div>
+            </aside>
+
+            <!-- Main Content Area -->
+            <main id="main-content" class="flex-1 p-4 md:p-8 overflow-y-auto">
+                <!-- The content for each module will be injected here by JavaScript -->
+            </main>
+        </div>
+        
+        <!-- Mobile Bottom Navigation -->
+        <nav id="mobile-nav" class="md:hidden fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t dark:border-gray-700 flex justify-around p-2">
+            <!-- Mobile nav links will be loaded by JS -->
+        </nav>
+    </div>
+
+    <!-- 
+        Our main JavaScript file (we will create this in a future step)
+        It's placed at the end of the body to ensure all HTML elements are loaded before the script runs.
+    -->
+    <script src="js/main.js"></script>
+</body>
+</html>

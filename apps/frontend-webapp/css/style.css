@@ -1,0 +1,45 @@
+/*
+  This file contains custom styles that complement Tailwind CSS.
+*/
+
+/* Smooth transition for views appearing/disappearing */
+.view {
+    display: none;
+    animation: fadeIn 0.5s;
+}
+
+.view.active {
+    display: block;
+}
+
+/* A simple fade-in animation */
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+/*
+  Custom classes for active navigation links.
+  While we can do this with JavaScript and Tailwind, having a dedicated class
+  can make the JavaScript code cleaner.
+*/
+.nav-button.active {
+    /* These are Tailwind classes that we are applying via a custom CSS class */
+    @apply bg-blue-600 text-white shadow-lg;
+}
+
+.mobile-nav-button.active {
+    /* For the bottom navigation on mobile */
+    @apply text-blue-600;
+}
+
+/* Styling for Leaflet map popups to match our dark/light theme */
+.leaflet-popup-content-wrapper, .leaflet-popup-tip {
+    background-color: white;
+    color: #1f2937; /* gray-800 */
+}
+
+html.dark .leaflet-popup-content-wrapper, html.dark .leaflet-popup-tip {
+    background-color: #1f2937; /* gray-800 */
+    color: #f3f4f6; /* gray-100 */
+}
