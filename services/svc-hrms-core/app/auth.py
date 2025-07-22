@@ -5,7 +5,11 @@ from typing import Optional
 from dotenv import load_dotenv
 from jose import JWTError, jwt
 from passlib.context import CryptContext
+import passlib.utils.compat as passlib_compat # <-- NEW IMPORT
 
+# --- NEW: Suppress the bcrypt warning ---
+# This is a known workaround for a conflict in some environments.
+passlib_compat.PY3 = True 
 # Load environment variables from .env file in the root of the service
 load_dotenv()
 

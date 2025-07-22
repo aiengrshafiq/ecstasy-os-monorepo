@@ -1,6 +1,6 @@
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
-from datetime import date, time
+from datetime import date, time, datetime
 
 # ==================
 #  Reusable Schemas
@@ -35,9 +35,12 @@ class CompanyUpdate(CompanyBase):
 
 class Company(CompanyBase):
     id: int
+    # *** MODIFIED: Timestamps are now optional to handle old records ***
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
-        from_attributes = True # Renamed from orm_mode
+        from_attributes = True
 
 # ==================
 #  Project Schemas
@@ -47,17 +50,25 @@ class ProjectBase(BaseModel):
     id: str
     name: str
     location: Location
+    status: str
 
 class ProjectCreate(ProjectBase):
     pass
 
 class Project(ProjectBase):
+    # *** MODIFIED: Timestamps are now optional to handle old records ***
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
     class Config:
-        from_attributes = True # Renamed from orm_mode
+        from_attributes = True
 
 # ==================
 #  User Schemas
 # ==================
+
+class FaceRegistration(BaseModel):
+    descriptor: List[float]
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -82,10 +93,31 @@ class UserUpdate(BaseModel):
     work_end_time: Optional[time] = None
     work_week: Optional[List[str]] = None
     allowed_locations: Optional[List[str]] = None
+    azure_person_id: Optional[str] = None
 
 class User(UserBase):
     id: int
     is_active: bool
+    has_face_descriptor: bool = False
+    # *** MODIFIED: Timestamps are now optional to handle old records ***
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
     class Config:
-        from_attributes = True # Renamed from orm_mode
+        from_attributes = True
+
+# ==================
+#  AuditLog Schemas
+# ==================
+
+class AuditLog(BaseModel):
+    id: int
+    timestamp: datetime
+    actor_email: str
+    action: str
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
+    details: Optional[str] = None
+
+    class Config:
+        from_attributes = True

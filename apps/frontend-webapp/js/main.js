@@ -1,6 +1,5 @@
 // =================================================================================
-// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version)
-// This file includes all fixes for API connection, model paths, and data handling.
+// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Audit Log UI)
 // =================================================================================
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -14,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
         projects: [],
         users: [],
         isCameraOn: false,
-        isModelsLoaded: false,
         checkInTime: null,
         checkOutTime: null,
     };
@@ -26,11 +24,66 @@ document.addEventListener('DOMContentLoaded', () => {
     const loginForm = document.getElementById('login-form');
     const loginError = document.getElementById('login-error');
     
-    // --- 3. API HELPER FUNCTIONS ---
+    // --- 3. UTILITY FUNCTIONS ---
+    function showToast(message, type = 'info') {
+        const toastContainer = document.createElement('div');
+        toastContainer.className = 'fixed top-5 right-5 p-4 rounded-lg shadow-lg text-white text-sm z-50 animate-fade-in-down';
+        
+        const colors = {
+            success: 'bg-green-500',
+            error: 'bg-red-500',
+            info: 'bg-blue-500'
+        };
+        toastContainer.classList.add(colors[type]);
+        toastContainer.textContent = message;
+
+        document.body.appendChild(toastContainer);
+
+        setTimeout(() => {
+            toastContainer.classList.add('animate-fade-out-up');
+            toastContainer.addEventListener('animationend', () => {
+                toastContainer.remove();
+            });
+        }, 3000);
+    }
+    
+    function setLoadingState(button, isLoading) {
+        if (isLoading) {
+            if (!button.dataset.originalContent) {
+                button.dataset.originalContent = button.innerHTML;
+            }
+            button.disabled = true;
+            button.innerHTML = `
+                <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Processing...
+            `;
+        } else {
+            if (button.dataset.originalContent) {
+                button.innerHTML = button.dataset.originalContent;
+                delete button.dataset.originalContent;
+            }
+            button.disabled = false;
+        }
+    }
+
+    const style = document.createElement('style');
+    style.innerHTML = `
+        @keyframes fade-in-down { 0% { opacity: 0; transform: translateY(-20px); } 100% { opacity: 1; transform: translateY(0); } }
+        @keyframes fade-out-up { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-20px); } }
+        .animate-fade-in-down { animation: fade-in-down 0.5s ease-out forwards; }
+        .animate-fade-out-up { animation: fade-out-up 0.5s ease-in forwards; }
+    `;
+    document.head.appendChild(style);
+
+
+    // --- 4. API HELPER FUNCTIONS ---
     async function apiFetch(endpoint, options = {}) {
         const token = localStorage.getItem('accessToken');
         const headers = {
-            'Content-Type': 'application/json',
+            ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
             ...options.headers,
         };
 
@@ -53,7 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return response.json();
     }
 
-    // --- 4. TEMPLATES ---
+    // --- 5. TEMPLATES ---
     const templates = {
         sidebar: (user) => `
             <div class="flex items-center mb-8"><h1 class="text-xl font-bold">Ecstasy OS</h1></div>
@@ -67,6 +120,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 <button id="logout-button" class="flex items-center w-full px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600">Logout</button>
             </div>
         `,
+        dashboard: (user) => {
+            const hour = new Date().getHours();
+            const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+            const isAdmin = user.role === 'Admin' || user.role === 'Super Admin';
+
+            return `
+                <h2 class="text-3xl font-bold mb-2">${greeting}, ${user.name.split(' ')[0]}!</h2>
+                <p class="text-gray-500 dark:text-gray-400 mb-8">Here's your overview for today.</p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex flex-col justify-center items-center text-center">
+                        <h3 class="font-semibold mb-4">Quick Actions</h3>
+                        <button id="dashboard-check-in-btn" class="w-full px-6 py-3 text-white bg-green-600 rounded-lg hover:bg-green-700 transition-colors mb-3">Check In</button>
+                        <p class="text-xs text-gray-400">Click here to quickly mark your attendance.</p>
+                    </div>
+                    <div class="p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex flex-col justify-center items-center text-center">
+                        <h3 id="dashboard-time" class="text-4xl font-bold"></h3>
+                        <p id="dashboard-date" class="text-gray-500"></p>
+                    </div>
+                    ${isAdmin ? `
+                    <div class="p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex flex-col justify-center items-center text-center">
+                        <h3 class="font-semibold mb-2">Team Status</h3>
+                        <p class="text-5xl font-bold">0</p>
+                        <p class="text-gray-500">Employees Checked In</p>
+                    </div>
+                    ` : ''}
+                    <div class="md:col-span-2 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
+                        <h3 class="font-semibold mb-4">Company Announcements</h3>
+                        <div class="text-center text-gray-400 py-8"><p>No new announcements.</p></div>
+                    </div>
+                </div>
+            `;
+        },
         attendance: (user) => `
             <h2 class="text-3xl font-bold mb-6">Smart Attendance</h2>
             <div class="max-w-2xl mx-auto p-4 md:p-8 space-y-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
@@ -84,27 +170,24 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
                 <div id="status-message" class="p-4 rounded-lg border-l-4 flex items-center"></div>
                 <div class="flex flex-col sm:flex-row gap-4">
-                    <button id="toggle-camera-btn" class="flex-1 flex items-center justify-center px-6 py-3 text-white bg-gray-500 rounded-lg hover:bg-gray-600 disabled:bg-gray-400">Turn On Camera</button>
-                    <button id="check-in-btn" class="flex-1 flex items-center justify-center px-6 py-3 text-white bg-green-600 rounded-lg hover:bg-green-700 disabled:bg-green-400">Check In</button>
+                    <button id="toggle-camera-btn" class="flex-1 flex items-center justify-center px-6 py-3 text-white bg-gray-500 rounded-lg hover:bg-gray-600">Turn On Camera</button>
+                    <button id="check-in-btn" class="flex-1 flex items-center justify-center px-6 py-3 text-white bg-green-600 rounded-lg hover:bg-green-700">Check In</button>
                     <button id="check-out-btn" class="flex-1 flex items-center justify-center px-6 py-3 text-white bg-red-600 rounded-lg hover:bg-red-700 hidden">Check Out</button>
                 </div>
-                <p id="model-loading-status" class="text-xs text-center text-yellow-500">Loading AI models...</p>
             </div>
         `,
         company: (profile) => `
             <h2 class="text-3xl font-bold mb-6">Company Profile</h2>
             <div class="max-w-4xl mx-auto p-8 space-y-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
-                <div id="company-notification" class="p-3 mb-4 text-sm text-green-800 bg-green-100 dark:bg-green-900 dark:text-green-200 rounded-lg hidden"></div>
                 <div><label class="block mb-1 text-sm font-medium">Company Name</label><input id="company-name-input" value="${profile.name}" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600"></div>
                 <div><label class="block mb-1 text-sm font-medium">Address</label><input id="company-address-input" value="${profile.address}" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600"></div>
                 <div><label class="block mb-2 text-sm font-medium">Company Geofence Location</label><div id="company-map" style="height: 300px; width: 100%; border-radius: 0.5rem;"></div></div>
-                <button id="save-company-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save Changes</button>
+                <button id="save-company-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Save Changes</button>
             </div>
         `,
         projects: () => `
             <h2 class="text-3xl font-bold mb-6">Project Profiles</h2>
             <div class="max-w-6xl mx-auto">
-                <div id="project-notification" class="p-3 mb-4 text-sm text-green-800 bg-green-100 dark:bg-green-900 dark:text-green-200 rounded-lg hidden"></div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div class="md:col-span-1 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
                         <h3 class="font-semibold mb-4">Projects</h3>
@@ -120,10 +203,12 @@ document.addEventListener('DOMContentLoaded', () => {
         employees: () => `
             <h2 class="text-3xl font-bold mb-6">Employee Profiles</h2>
             <div class="max-w-7xl mx-auto">
-                <div id="employee-notification" class="p-3 mb-4 text-sm text-green-800 bg-green-100 dark:bg-green-900 dark:text-green-200 rounded-lg hidden"></div>
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div class="lg:col-span-1 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg flex flex-col">
-                        <h3 class="font-semibold mb-4">Employees</h3>
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="font-semibold">Employees</h3>
+                            <button id="add-new-employee-btn" class="px-3 py-1 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700">+ New</button>
+                        </div>
                         <div class="relative mb-4">
                             <input id="employee-search-input" type="text" placeholder="Search by name..." class="w-full pl-10 pr-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
                             <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
@@ -137,9 +222,47 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `,
+        faceRegistrationModal: (user) => `
+            <div id="face-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+                <div id="face-modal" class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 w-full max-w-lg text-center">
+                    <h3 class="font-semibold text-lg mb-2">Register Face for ${user.name}</h3>
+                    <p id="modal-instructions" class="text-sm text-gray-500 mb-4 h-5">Position the employee's face in the frame.</p>
+                    <div class="relative w-full aspect-video bg-gray-900 rounded-lg overflow-hidden mb-4">
+                        <video id="modal-video-feed" autoplay muted playsinline class="w-full h-full object-cover"></video>
+                    </div>
+                    <div class="flex gap-4">
+                        <button id="modal-cancel-btn" class="w-full py-2 rounded-lg bg-gray-200 dark:bg-gray-600 hover:bg-gray-300">Cancel</button>
+                        <button id="modal-capture-btn" class="w-full py-2 rounded-lg text-white bg-blue-600 hover:bg-blue-700 flex items-center justify-center">Capture & Register</button>
+                    </div>
+                </div>
+            </div>
+        `,
+        // *** NEW TEMPLATE for Audit Log Modal ***
+        auditLogModal: (user, logs) => `
+            <div id="audit-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
+                <div id="audit-modal" class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 w-full max-w-2xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-semibold text-lg">Change History for ${user.name}</h3>
+                        <button id="audit-modal-close-btn" class="text-gray-400 hover:text-gray-600">&times;</button>
+                    </div>
+                    <div class="max-h-96 overflow-y-auto pr-2">
+                        ${logs.length === 0 ? '<p class="text-gray-500">No history found for this user.</p>' : ''}
+                        <ul class="space-y-4">
+                            ${logs.map(log => `
+                                <li class="border-b dark:border-gray-700 pb-2">
+                                    <p class="font-semibold text-sm">${log.action.replace('_', ' ')}</p>
+                                    <p class="text-xs text-gray-500">by ${log.actor_email} on ${new Date(log.timestamp).toLocaleString()}</p>
+                                    <p class="text-sm mt-1">${log.details}</p>
+                                </li>
+                            `).join('')}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        `,
     };
 
-    // --- 5. INITIALIZATION AND AUTHENTICATION ---
+    // --- 6. INITIALIZATION AND AUTHENTICATION ---
     
     async function init() {
         loginForm.addEventListener('submit', handleLogin);
@@ -164,6 +287,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleLogin(e) {
         e.preventDefault();
+        const loginButton = e.target.querySelector('button[type="submit"]');
+        setLoadingState(loginButton, true);
+        
         const formData = new FormData();
         formData.append('username', document.getElementById('email-input').value);
         formData.append('password', document.getElementById('password-input').value);
@@ -190,6 +316,8 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error("Login Error:", error);
             loginError.textContent = 'Incorrect email or password.';
             loginError.classList.remove('hidden');
+        } finally {
+            setLoadingState(loginButton, false);
         }
     }
     
@@ -225,17 +353,18 @@ document.addEventListener('DOMContentLoaded', () => {
             AppState.projects = projects;
             AppState.users = users;
             
-            switchToView('attendance');
+            switchToView('dashboard');
         } catch (error) {
             console.error("Failed to load initial app data:", error);
-            alert("Could not load application data. Please try again.");
+            showToast("Could not load application data. Please try again.", "error");
         }
     }
 
-    // --- 6. NAVIGATION ---
+    // --- 7. NAVIGATION ---
     
     function setupNavigation() {
         const navItems = [
+            { view: 'dashboard', label: 'Dashboard', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'attendance', label: 'Attendance', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'employees', label: 'Employees', roles: ['Super Admin', 'Admin', 'HR'] },
             { view: 'projects', label: 'Projects', roles: ['Super Admin', 'Admin'] },
@@ -277,6 +406,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         switch (viewId) {
+            case 'dashboard':
+                mainContent.innerHTML = templates.dashboard(AppState.currentUser);
+                initializeDashboardModule();
+                break;
             case 'attendance':
                 mainContent.innerHTML = templates.attendance(AppState.currentUser);
                 initializeAttendanceModule();
@@ -296,7 +429,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 7. MODULES (API Connected) ---
+    // --- 8. MODULES ---
+
+    function initializeDashboardModule() {
+        const timeEl = document.getElementById('dashboard-time');
+        const dateEl = document.getElementById('dashboard-date');
+        
+        function updateTime() {
+            const now = new Date();
+            timeEl.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+            dateEl.textContent = now.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        }
+        
+        updateTime();
+        setInterval(updateTime, 1000 * 30);
+
+        document.getElementById('dashboard-check-in-btn').addEventListener('click', () => {
+            switchToView('attendance');
+        });
+    }
 
     function initializeCompanyModule() {
         const nameInput = document.getElementById('company-name-input');
@@ -310,6 +461,7 @@ document.addEventListener('DOMContentLoaded', () => {
         map.on('click', (e) => marker.setLatLng(e.latlng));
 
         saveBtn.addEventListener('click', async () => {
+            setLoadingState(saveBtn, true);
             const updatedProfile = {
                 name: nameInput.value,
                 address: addressInput.value,
@@ -321,12 +473,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     body: JSON.stringify(updatedProfile)
                 });
                 AppState.companyProfile = savedProfile;
-                const notification = document.getElementById('company-notification');
-                notification.textContent = 'Company profile updated successfully!';
-                notification.classList.remove('hidden');
-                setTimeout(() => notification.classList.add('hidden'), 3000);
+                showToast('Company profile updated!', 'success');
             } catch (error) {
-                alert(`Error saving company profile: ${error.message}`);
+                showToast(`Error: ${error.message}`, 'error');
+            } finally {
+                setLoadingState(saveBtn, false);
             }
         });
     }
@@ -335,7 +486,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const projectsListContainer = document.getElementById('projects-list');
         const projectFormContainer = document.getElementById('project-form-container');
         const addNewProjectBtn = document.getElementById('add-new-project-btn');
-        const notificationDiv = document.getElementById('project-notification');
 
         function renderProjectsList() {
             projectsListContainer.innerHTML = '';
@@ -354,15 +504,22 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function renderProjectForm(projectId) {
-            const project = projectId ? AppState.projects.find(p => p.id === projectId) : { id: null, name: '', location: AppState.companyProfile.location };
+            const project = projectId ? AppState.projects.find(p => p.id === projectId) : { id: null, name: '', status: 'Active', location: AppState.companyProfile.location };
             
             projectFormContainer.innerHTML = `
                 <h3 class="font-semibold text-lg">${project.id ? 'Edit Project' : 'New Project'}</h3>
-                <div class="space-y-4 mt-4">
-                    <div><label class="block mb-1 text-sm font-medium">Project Name</label><input id="project-name-input" value="${project.name}" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600"></div>
+                <form id="project-form" class="space-y-4 mt-4">
+                    <div><label class="block mb-1 text-sm font-medium">Project Name</label><input name="name" value="${project.name}" class="w-full input-field" required></div>
+                    <div><label class="block mb-1 text-sm font-medium">Status</label>
+                        <select name="status" class="w-full input-field">
+                            <option ${project.status === 'Active' ? 'selected' : ''}>Active</option>
+                            <option ${project.status === 'Completed' ? 'selected' : ''}>Completed</option>
+                            <option ${project.status === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
+                        </select>
+                    </div>
                     <div><label class="block mb-2 text-sm font-medium">Project Geofence Location</label><div id="project-map" style="height: 250px; width: 100%; border-radius: 0.5rem;"></div></div>
-                    <button id="save-project-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save Project</button>
-                </div>
+                    <button type="submit" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Save Project</button>
+                </form>
             `;
 
             const map = L.map('project-map').setView(project.location, 13);
@@ -370,15 +527,20 @@ document.addEventListener('DOMContentLoaded', () => {
             let marker = L.marker(project.location).addTo(map);
             map.on('click', (e) => marker.setLatLng(e.latlng));
             
-            document.getElementById('save-project-btn').addEventListener('click', async () => {
-                const newName = document.getElementById('project-name-input').value;
-                const newLocation = marker.getLatLng();
+            const projectForm = document.getElementById('project-form');
+            projectForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const submitButton = e.target.querySelector('button[type="submit"]');
+                setLoadingState(submitButton, true);
+
+                const formData = new FormData(e.target);
                 const projectIdToSave = project.id || `proj-${Date.now()}`;
                 
                 const projectData = {
                     id: projectIdToSave,
-                    name: newName,
-                    location: newLocation
+                    name: formData.get('name'),
+                    status: formData.get('status'),
+                    location: marker.getLatLng()
                 };
 
                 try {
@@ -394,14 +556,13 @@ document.addEventListener('DOMContentLoaded', () => {
                         AppState.projects.push(savedProject);
                     }
                     
-                    notificationDiv.textContent = 'Project saved successfully!';
-                    notificationDiv.classList.remove('hidden');
-                    setTimeout(() => notificationDiv.classList.add('hidden'), 3000);
-
+                    showToast('Project saved successfully!', 'success');
                     renderProjectsList();
                     projectFormContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">Select a project to edit or add a new one.</div>';
                 } catch (error) {
-                    alert(`Error saving project: ${error.message}`);
+                    showToast(`Error: ${error.message}`, 'error');
+                } finally {
+                    setLoadingState(submitButton, false);
                 }
             });
         }
@@ -413,9 +574,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeEmployeesModule() {
         const listContainer = document.getElementById('employees-list');
         const formContainer = document.getElementById('employee-form-container');
-        const notificationDiv = document.getElementById('employee-notification');
         const searchInput = document.getElementById('employee-search-input');
         const paginationContainer = document.getElementById('employee-pagination');
+        const addNewEmployeeBtn = document.getElementById('add-new-employee-btn');
 
         let currentPage = 1;
         const itemsPerPage = 8;
@@ -467,9 +628,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function renderEmployeeForm(userId) {
-            const user = AppState.users.find(u => u.id === userId);
+            const user = userId ? AppState.users.find(u => u.id === userId) : { id: null };
             if (!user) return;
 
+            const isNewUser = !user.id;
             const userWorkWeek = user.work_week || [];
             const userAllowedLocations = user.allowed_locations || [];
 
@@ -477,13 +639,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const allLocations = [{id: 'company', name: 'Company HQ'}, ...AppState.projects];
 
             formContainer.innerHTML = `
-                <h3 class="font-semibold text-lg mb-4">Edit Employee: ${user.name}</h3>
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-semibold text-lg">${isNewUser ? 'Create New Employee' : `Edit Employee: ${user.name}`}</h3>
+                    ${!isNewUser ? `<button id="view-history-btn" class="text-sm text-blue-500 hover:underline">View History</button>` : ''}
+                </div>
                 <form id="employee-form" class="space-y-6">
                     <div class="p-4 border rounded-lg dark:border-gray-600">
                         <h4 class="font-medium mb-4">Job Details</h4>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div><label class="block text-sm mb-1">Full Name</label><input name="name" value="${user.name}" class="w-full input-field"></div>
-                            <div><label class="block text-sm mb-1">Email</label><input name="email" type="email" value="${user.email}" class="w-full input-field" disabled></div>
+                            <div><label class="block text-sm mb-1">Full Name</label><input name="name" value="${user.name || ''}" class="w-full input-field" required></div>
+                            <div><label class="block text-sm mb-1">Email</label><input name="email" type="email" value="${user.email || ''}" class="w-full input-field" ${!isNewUser ? 'disabled' : ''} required></div>
+                            ${isNewUser ? `<div><label class="block text-sm mb-1">Password</label><input name="password" type="password" class="w-full input-field" required></div>` : ''}
                             <div><label class="block text-sm mb-1">Role</label>
                                 <select name="role" class="w-full input-field">
                                     <option ${user.role === 'Employee' ? 'selected' : ''}>Employee</option>
@@ -518,13 +684,33 @@ document.addEventListener('DOMContentLoaded', () => {
                                 `).join('')}
                             </div>
                         </div>
+                        ${!isNewUser ? `
+                        <div>
+                             <h5 class="font-medium text-sm mb-2">Facial Recognition</h5>
+                             <button id="register-face-btn" type="button" class="px-4 py-2 text-sm text-white ${user.has_face_descriptor ? 'bg-green-600' : 'bg-gray-600'} rounded-lg hover:opacity-80 flex items-center justify-center">
+                                ${user.has_face_descriptor ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M20 6 9 17l-5-5"></path></svg> Face Registered' : 'Register Face'}
+                             </button>
+                        </div>` : ''}
                     </div>
-                    <button type="submit" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save Changes</button>
+                    <button type="submit" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">${isNewUser ? 'Create Employee' : 'Save Changes'}</button>
                 </form>
             `;
             
-            document.getElementById('employee-form').addEventListener('submit', async (e) => {
+            if (!isNewUser) {
+                document.getElementById('register-face-btn').addEventListener('click', () => {
+                    initializeFaceRegistrationModal(user);
+                });
+                document.getElementById('view-history-btn').addEventListener('click', () => {
+                    initializeAuditLogModal(user);
+                });
+            }
+            
+            const employeeForm = document.getElementById('employee-form');
+            employeeForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
+                const submitButton = e.target.querySelector('button[type="submit"]');
+                setLoadingState(submitButton, true);
+
                 const formData = new FormData(e.target);
                 const updatedData = {};
                 for (let [key, value] of formData.entries()) {
@@ -535,21 +721,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 updatedData.work_week = Array.from(document.querySelectorAll('.work-day-btn.bg-blue-600')).map(btn => btn.dataset.day);
 
                 try {
-                    const savedUser = await apiFetch(`/users/${userId}`, {
-                        method: 'PUT',
-                        body: JSON.stringify(updatedData)
-                    });
-                    
-                    const userIndex = AppState.users.findIndex(u => u.id === userId);
-                    AppState.users[userIndex] = savedUser;
-                    
-                    notificationDiv.textContent = 'Employee profile saved successfully!';
-                    notificationDiv.classList.remove('hidden');
-                    setTimeout(() => notificationDiv.classList.add('hidden'), 3000);
+                    if (isNewUser) {
+                        const newUser = await apiFetch(`/users/`, {
+                            method: 'POST',
+                            body: JSON.stringify(updatedData)
+                        });
+                        AppState.users.push(newUser);
+                        showToast('Employee created successfully!', 'success');
+                    } else {
+                        const savedUser = await apiFetch(`/users/${userId}`, {
+                            method: 'PUT',
+                            body: JSON.stringify(updatedData)
+                        });
+                        const userIndex = AppState.users.findIndex(u => u.id === userId);
+                        AppState.users[userIndex] = savedUser;
+                        showToast('Employee profile saved successfully!', 'success');
+                    }
                     
                     render();
+                    formContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">Select an employee to view or edit their profile.</div>';
                 } catch (error) {
-                    alert(`Error saving employee: ${error.message}`);
+                    showToast(`Error: ${error.message}`, 'error');
+                } finally {
+                    setLoadingState(submitButton, false);
                 }
             });
 
@@ -569,6 +763,12 @@ document.addEventListener('DOMContentLoaded', () => {
             formContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500">Select an employee to view or edit their profile.</div>';
             render();
         });
+        
+        addNewEmployeeBtn.addEventListener('click', () => {
+            selectedUserId = null;
+            render();
+            renderEmployeeForm(null);
+        });
 
         render();
     }
@@ -578,21 +778,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const toggleCameraBtn = document.getElementById('toggle-camera-btn');
         const checkInBtn = document.getElementById('check-in-btn');
         const checkOutBtn = document.getElementById('check-out-btn');
-        const modelStatus = document.getElementById('model-loading-status');
-
-        const modelPath = '/public/models';
-
-        Promise.all([
-            faceapi.nets.tinyFaceDetector.loadFromUri(modelPath),
-            faceapi.nets.faceLandmark68Net.loadFromUri(modelPath),
-            faceapi.nets.faceRecognitionNet.loadFromUri(modelPath)
-        ]).then(() => {
-            AppState.isModelsLoaded = true;
-            modelStatus.classList.add('hidden');
-        }).catch(err => {
-            console.error("Error loading models:", err);
-            updateStatus('error', 'Could not load AI models. Check paths.');
-        });
 
         toggleCameraBtn.addEventListener('click', () => {
             if (AppState.isCameraOn) stopCamera();
@@ -622,27 +807,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function handleCheckIn() {
-            if (!AppState.isCameraOn || !AppState.isModelsLoaded) {
-                updateStatus('error', 'Please turn on camera and wait for models.');
+            if (!AppState.isCameraOn) {
+                updateStatus('error', 'Please turn on the camera first.');
                 return;
             }
-            updateStatus('info', 'Processing...');
+            updateStatus('info', 'Verifying face...');
+            setLoadingState(checkInBtn, true);
 
-            navigator.geolocation.getCurrentPosition(async (position) => {
-                console.log('User location:', position.coords);
-                
-                const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
-                if (detections.length === 1) {
-                    updateStatus('success', 'Check-in successful! Welcome.');
-                    AppState.checkInTime = new Date();
-                    document.getElementById('check-in-time').textContent = AppState.checkInTime.toLocaleTimeString();
-                    checkInBtn.classList.add('hidden');
-                    checkOutBtn.classList.remove('hidden');
-                } else {
-                    updateStatus('error', `Check-in failed: ${detections.length === 0 ? 'No face' : 'Multiple faces'} detected.`);
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'checkin_face.jpg');
+
+                try {
+                    const result = await apiFetch('/attendance/verify-face', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (result.is_identical) {
+                        updateStatus('success', `Verification successful! (Confidence: ${result.confidence.toFixed(2)})`);
+                        AppState.checkInTime = new Date();
+                        document.getElementById('check-in-time').textContent = AppState.checkInTime.toLocaleTimeString();
+                        checkInBtn.classList.add('hidden');
+                        checkOutBtn.classList.remove('hidden');
+                    } else {
+                        updateStatus('error', 'Face does not match. Please try again.');
+                    }
+                } catch (error) {
+                    updateStatus('error', `Verification failed: ${error.message}`);
+                } finally {
+                    stopCamera();
+                    setLoadingState(checkInBtn, false);
                 }
-                stopCamera();
-            }, () => updateStatus('error', 'Could not get location. Please enable location services.'));
+            }, 'image/jpeg');
         }
 
         function handleCheckOut() {
@@ -662,7 +864,128 @@ document.addEventListener('DOMContentLoaded', () => {
             else statusDiv.classList.add('bg-blue-100', 'dark:bg-blue-900', 'border-blue-500');
         }
     }
+    
+    function initializeFaceRegistrationModal(user) {
+        const modalContainer = document.createElement('div');
+        modalContainer.innerHTML = templates.faceRegistrationModal(user);
+        document.body.appendChild(modalContainer);
 
-    // --- 8. START THE APPLICATION ---
+        const video = document.getElementById('modal-video-feed');
+        const instructions = document.getElementById('modal-instructions');
+        const captureBtn = document.getElementById('modal-capture-btn');
+        const cancelBtn = document.getElementById('modal-cancel-btn');
+        const backdrop = document.getElementById('face-modal-backdrop');
+
+        let videoStream = null;
+
+        function closeModal() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            modalContainer.remove();
+        }
+
+        navigator.mediaDevices.getUserMedia({ video: {} })
+            .then(stream => {
+                videoStream = stream;
+                video.srcObject = stream;
+            })
+            .catch(err => {
+                showToast('Camera access denied. Please enable permissions.', 'error');
+                closeModal();
+            });
+
+        captureBtn.addEventListener('click', async () => {
+            setLoadingState(captureBtn, true);
+            instructions.textContent = 'Uploading and processing...';
+
+            const canvas = document.createElement('canvas');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            
+            canvas.toBlob(async (blob) => {
+                const formData = new FormData();
+                formData.append('file', blob, 'face.jpg');
+
+                try {
+                    const token = localStorage.getItem('accessToken');
+                    const headers = { 'Authorization': `Bearer ${token}` };
+                    const response = await fetch(`${API_BASE_URL}/users/${user.id}/register-face`, {
+                        method: 'POST',
+                        body: formData,
+                        headers: headers
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.detail || 'An API error occurred');
+                    }
+                    
+                    const updatedUser = await response.json();
+                    
+                    const userIndex = AppState.users.findIndex(u => u.id === user.id);
+                    AppState.users[userIndex] = updatedUser;
+
+                    showToast('Face registered successfully!', 'success');
+                    closeModal();
+                    
+                    const userButton = document.querySelector(`#employees-list button[data-user-id='${user.id}']`);
+                    if (userButton) userButton.click();
+
+                } catch (error) {
+                    showToast(`Registration failed: ${error.message}`, 'error');
+                    instructions.textContent = 'Capture failed. Please try again.';
+                } finally {
+                    setLoadingState(captureBtn, false);
+                }
+
+            }, 'image/jpeg');
+        });
+
+        cancelBtn.addEventListener('click', closeModal);
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop) {
+                closeModal();
+            }
+        });
+    }
+
+    // *** NEW MODULE for Audit Logs ***
+    async function initializeAuditLogModal(user) {
+        const modalContainer = document.createElement('div');
+        // Show a loading state first
+        modalContainer.innerHTML = templates.auditLogModal(user, [{
+            action: "LOADING",
+            details: "Fetching history...",
+            actor_email: "System",
+            timestamp: new Date().toISOString()
+        }]);
+        document.body.appendChild(modalContainer);
+
+        function closeModal() {
+            modalContainer.remove();
+        }
+        
+        document.getElementById('audit-modal-close-btn').addEventListener('click', closeModal);
+        document.getElementById('audit-modal-backdrop').addEventListener('click', (e) => {
+            if (e.target.id === 'audit-modal-backdrop') closeModal();
+        });
+
+        try {
+            const logs = await apiFetch(`/audit-logs/USER/${user.id}`);
+            modalContainer.innerHTML = templates.auditLogModal(user, logs);
+            // Re-add event listeners after re-rendering
+            document.getElementById('audit-modal-close-btn').addEventListener('click', closeModal);
+            document.getElementById('audit-modal-backdrop').addEventListener('click', (e) => {
+                if (e.target.id === 'audit-modal-backdrop') closeModal();
+            });
+        } catch (error) {
+            showToast(`Error fetching history: ${error.message}`, 'error');
+            closeModal();
+        }
+    }
+
+    // --- 9. START THE APPLICATION ---
     init();
 });
