@@ -1,5 +1,5 @@
 // =================================================================================
-// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Audit Log UI)
+// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Leave Management UI)
 // =================================================================================
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -259,6 +259,58 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `,
+        // *** NEW TEMPLATE for Leave Management ***
+        leave: (user) => {
+            const isAdmin = user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'HR';
+            return `
+                <h2 class="text-3xl font-bold mb-6">Leave Management</h2>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <!-- Left Column: Form or Admin View -->
+                    <div class="lg:col-span-2">
+                        ${isAdmin ? `
+                            <div id="admin-leave-view">
+                                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                                    <h3 class="font-semibold mb-4">Pending Requests</h3>
+                                    <div id="pending-requests-list" class="space-y-4"></div>
+                                </div>
+                                <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 mt-6">
+                                    <h3 class="font-semibold mb-4">Resolved Requests</h3>
+                                    <div id="resolved-requests-list" class="space-y-4"></div>
+                                </div>
+                            </div>
+                        ` : `
+                            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                                <h3 class="font-semibold mb-4">Request Time Off</h3>
+                                <form id="leave-request-form" class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm mb-1">Leave Type</label>
+                                        <select name="leave_type" class="w-full input-field" required>
+                                            <option>Annual</option>
+                                            <option>Sick</option>
+                                            <option>Unpaid</option>
+                                            <option>Other</option>
+                                        </select>
+                                    </div>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div><label class="block text-sm mb-1">Start Date</label><input name="start_date" type="date" class="w-full input-field" required></div>
+                                        <div><label class="block text-sm mb-1">End Date</label><input name="end_date" type="date" class="w-full input-field" required></div>
+                                    </div>
+                                    <div><label class="block text-sm mb-1">Reason</label><textarea name="reason" rows="3" class="w-full input-field" required></textarea></div>
+                                    <button type="submit" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Submit Request</button>
+                                </form>
+                            </div>
+                        `}
+                    </div>
+                    <!-- Right Column: My History -->
+                    <div class="lg:col-span-1">
+                        <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                            <h3 class="font-semibold mb-4">My Leave History</h3>
+                            <div id="my-leave-history" class="space-y-3"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
     };
 
     // --- 6. INITIALIZATION AND AUTHENTICATION ---
@@ -364,6 +416,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function setupNavigation() {
         const navItems = [
             { view: 'dashboard', label: 'Dashboard', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
+            { view: 'leave', label: 'Leave', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'attendance', label: 'Attendance', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'employees', label: 'Employees', roles: ['Super Admin', 'Admin', 'HR'] },
             { view: 'projects', label: 'Projects', roles: ['Super Admin', 'Admin'] },
@@ -424,6 +477,10 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'employees':
                 mainContent.innerHTML = templates.employees();
                 initializeEmployeesModule();
+                break;
+            case 'leave':
+                mainContent.innerHTML = templates.leave(AppState.currentUser);
+                initializeLeaveModule();
                 break;
         }
     }

@@ -121,3 +121,33 @@ class AuditLog(BaseModel):
 
     class Config:
         from_attributes = True
+    
+
+# ==================
+#  LeaveRequest Schemas (NEW)
+# ==================
+
+class LeaveRequestBase(BaseModel):
+    leave_type: str
+    start_date: date
+    end_date: date
+    reason: str
+
+class LeaveRequestCreate(LeaveRequestBase):
+    pass
+
+class LeaveRequestUpdate(BaseModel):
+    status: str # "Approved" or "Denied"
+
+class LeaveRequest(LeaveRequestBase):
+    id: int
+    owner_id: int
+    status: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+    
+    # Add a field to include owner's name for easy display on the frontend
+    owner_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True

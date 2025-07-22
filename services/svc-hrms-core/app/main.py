@@ -229,3 +229,50 @@ def get_logs_for_target(target_type: str, target_id: str, db: Session = Depends(
     
     logs = crud.get_audit_logs_for_target(db, target_type=target_type.upper(), target_id=target_id)
     return logs
+
+# --- NEW: Leave Management Endpoints ---
+
+@app.post("/leave-requests/", response_model=schemas.LeaveRequest, status_code=status.HTTP_201_CREATED)
+def create_leave_request(request: schemas.LeaveRequestCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    """
+    Allows the currently logged-in user to submit a new leave request.
+    """
+    return crud.create_leave_request(db=db, request=request, owner_id=current_user.id)
+
+@app.get("/leave-requests/me", response_model=List[schemas.LeaveRequest])
+def read_my_leave_requests(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    """
+    Retrieves all leave requests for the currently logged-in user.
+    """
+    return crud.get_leave_requests_by_owner(db, owner_id=current_user.id)
+
+@app.get("/leave-requests/", response_model=List[schemas.LeaveRequest])
+def read_all_leave_requests(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    """
+    Retrieves all leave requests. Restricted to Admin/HR roles.
+    """
+    if current_user.role not in ["Super Admin", "Admin", "HR"]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    
+    requests_with_names = crud.get_all_leave_requests(db)
+    # The CRUD function returns a list of tuples (LeaveRequest, owner_name). We need to map this to our schema.
+    return [
+        schemas.LeaveRequest(
+            **request.__dict__,
+            owner_name=owner_name
+        ) for request, owner_name in requests_with_names
+    ]
+
+@app.put("/leave-requests/{request_id}", response_model=schemas.LeaveRequest)
+def update_leave_request(request_id: int, request_update: schemas.LeaveRequestUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    """
+    Approves or denies a leave request. Restricted to Admin/HR roles.
+    """
+    if current_user.role not in ["Super Admin", "Admin", "HR"]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    
+    updated_request = crud.update_leave_request_status(db, request_id=request_id, status=request_update.status, reviewer=current_user)
+    if not updated_request:
+        raise HTTPException(status_code=404, detail="Leave request not found")
+    
+    return updated_request

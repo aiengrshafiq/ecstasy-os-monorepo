@@ -63,3 +63,26 @@ class AuditLog(Base):
     target_id = Column(String, index=True)   # e.g., "123" (user id) or "proj-abc" (project id)
 
     details = Column(String, nullable=True)
+    
+
+# --- NEW TABLE MODEL for Leave Management ---
+class LeaveRequest(Base):
+    __tablename__ = "leave_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Who is requesting the leave
+    owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    
+    # Details of the request
+    leave_type = Column(String, nullable=False) # e.g., "Annual", "Sick", "Unpaid"
+    start_date = Column(Date, nullable=False)
+    end_date = Column(Date, nullable=False)
+    reason = Column(String)
+    
+    # Status and management
+    status = Column(String, default="Pending", nullable=False) # "Pending", "Approved", "Denied"
+    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True) # Who approved/denied it
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

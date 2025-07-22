@@ -217,3 +217,49 @@ def update_project(db: Session, project_id: str, project_update: schemas.Project
         )
         
     return db_project
+
+# ==================
+#  LeaveRequest CRUD (NEW)
+# ==================
+
+def create_leave_request(db: Session, request: schemas.LeaveRequestCreate, owner_id: int):
+    db_request = models.LeaveRequest(**request.dict(), owner_id=owner_id)
+    db.add(db_request)
+    db.commit()
+    db.refresh(db_request)
+    return db_request
+
+def get_leave_request(db: Session, request_id: int):
+    return db.query(models.LeaveRequest).filter(models.LeaveRequest.id == request_id).first()
+
+def get_leave_requests_by_owner(db: Session, owner_id: int):
+    return db.query(models.LeaveRequest).filter(models.LeaveRequest.owner_id == owner_id).order_by(models.LeaveRequest.start_date.desc()).all()
+
+def get_all_leave_requests(db: Session, skip: int = 0, limit: int = 100):
+    # This query joins the LeaveRequest with the User table to fetch the owner's name
+    return db.query(models.LeaveRequest, models.User.name.label("owner_name"))\
+             .join(models.User, models.LeaveRequest.owner_id == models.User.id)\
+             .order_by(models.LeaveRequest.created_at.desc()).offset(skip).limit(limit).all()
+
+def update_leave_request_status(db: Session, request_id: int, status: str, reviewer: models.User):
+    db_request = get_leave_request(db, request_id)
+    if not db_request:
+        return None
+    
+    old_status = db_request.status
+    db_request.status = status
+    db_request.reviewed_by_id = reviewer.id
+    db.commit()
+    db.refresh(db_request)
+
+    # Create an audit log for this action
+    create_audit_log(
+        db,
+        actor=reviewer,
+        action="UPDATE_LEAVE_REQUEST",
+        details=f"Changed leave request status from '{old_status}' to '{status}'.",
+        target_type="LEAVE_REQUEST",
+        target_id=str(db_request.id)
+    )
+    
+    return db_request
