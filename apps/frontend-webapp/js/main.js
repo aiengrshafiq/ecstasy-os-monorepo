@@ -179,8 +179,8 @@ document.addEventListener('DOMContentLoaded', () => {
         company: (profile) => `
             <h2 class="text-3xl font-bold mb-6">Company Profile</h2>
             <div class="max-w-4xl mx-auto p-8 space-y-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
-                <div><label class="block mb-1 text-sm font-medium">Company Name</label><input id="company-name-input" value="${profile.name}" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600"></div>
-                <div><label class="block mb-1 text-sm font-medium">Address</label><input id="company-address-input" value="${profile.address}" class="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg dark:bg-gray-700 dark:border-gray-600"></div>
+                <div><label class="block mb-1 text-sm font-medium">Company Name</label><input id="company-name-input" value="${profile.name}" class="w-full input-field"></div>
+                <div><label class="block mb-1 text-sm font-medium">Address</label><input id="company-address-input" value="${profile.address}" class="w-full input-field"></div>
                 <div><label class="block mb-2 text-sm font-medium">Company Geofence Location</label><div id="company-map" style="height: 300px; width: 100%; border-radius: 0.5rem;"></div></div>
                 <button id="save-company-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Save Changes</button>
             </div>
@@ -237,13 +237,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `,
-        // *** NEW TEMPLATE for Audit Log Modal ***
         auditLogModal: (user, logs) => `
             <div id="audit-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
                 <div id="audit-modal" class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 w-full max-w-2xl">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="font-semibold text-lg">Change History for ${user.name}</h3>
-                        <button id="audit-modal-close-btn" class="text-gray-400 hover:text-gray-600">&times;</button>
+                        <button id="audit-modal-close-btn" class="text-gray-400 hover:text-gray-600 text-3xl">&times;</button>
                     </div>
                     <div class="max-h-96 overflow-y-auto pr-2">
                         ${logs.length === 0 ? '<p class="text-gray-500">No history found for this user.</p>' : ''}
@@ -951,10 +950,8 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // *** NEW MODULE for Audit Logs ***
     async function initializeAuditLogModal(user) {
         const modalContainer = document.createElement('div');
-        // Show a loading state first
         modalContainer.innerHTML = templates.auditLogModal(user, [{
             action: "LOADING",
             details: "Fetching history...",
@@ -975,7 +972,6 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const logs = await apiFetch(`/audit-logs/USER/${user.id}`);
             modalContainer.innerHTML = templates.auditLogModal(user, logs);
-            // Re-add event listeners after re-rendering
             document.getElementById('audit-modal-close-btn').addEventListener('click', closeModal);
             document.getElementById('audit-modal-backdrop').addEventListener('click', (e) => {
                 if (e.target.id === 'audit-modal-backdrop') closeModal();

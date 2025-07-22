@@ -104,7 +104,8 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), c
 
 @app.put("/users/{user_id}", response_model=schemas.User)
 def update_user_profile(user_id: int, user_update: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    updated_user = crud.update_user(db, user_id=user_id, user_update=user_update)
+    #updated_user = crud.update_user(db, user_id=user_id, user_update=user_update)
+    updated_user = crud.update_user(db, user_id=user_id, user_update=user_update, actor=current_user)
     if updated_user is None:
         raise HTTPException(status_code=404, detail="User not found")
     return map_user_to_schema(updated_user)
@@ -123,7 +124,8 @@ async def register_face(user_id: int, db: Session = Depends(get_db), file: Uploa
         person_id = db_user.azure_person_id
         if not person_id:
             person_id = face_service.create_person_in_group(name=db_user.name)
-            crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(azure_person_id=person_id))
+            #crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(azure_person_id=person_id))
+            crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(azure_person_id=person_id), actor=current_user)
         
         image_data = await file.read()
         face_service.add_face_to_person(person_id=person_id, image_stream=image_data)
