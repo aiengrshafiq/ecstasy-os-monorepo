@@ -1,15 +1,13 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from datetime import date
 from . import models, schemas
 from .auth import get_password_hash
 
 # ==================
-#  AuditLog CRUD (NEW)
+#  AuditLog CRUD
 # ==================
 
 def create_audit_log(db: Session, actor: models.User, action: str, details: str, target_type: str = None, target_id: str = None):
-    """
-    Creates a new audit log entry in the database.
-    """
     db_log = models.AuditLog(
         actor_id=actor.id,
         actor_email=actor.email,
@@ -23,9 +21,6 @@ def create_audit_log(db: Session, actor: models.User, action: str, details: str,
     return db_log
 
 def get_audit_logs_for_target(db: Session, target_type: str, target_id: str):
-    """
-    Retrieves all audit logs for a specific target (e.g., a specific user).
-    """
     return db.query(models.AuditLog).filter(
         models.AuditLog.target_type == target_type,
         models.AuditLog.target_id == target_id
@@ -57,7 +52,6 @@ def create_user(db: Session, user: schemas.UserCreate, actor: models.User):
     db.commit()
     db.refresh(db_user)
     
-    # Create audit log for user creation
     create_audit_log(
         db,
         actor=actor,
@@ -74,7 +68,6 @@ def update_user(db: Session, user_id: int, user_update: schemas.UserUpdate, acto
     if not db_user:
         return None
     
-    # --- Generate detailed audit log message ---
     change_details = []
     update_data = user_update.dict(exclude_unset=True)
     for key, new_value in update_data.items():
@@ -102,7 +95,6 @@ def register_user_face(db: Session, user_id: int, actor: models.User):
     if not db_user:
         return None
     
-    # This function is now just for logging, the azure_person_id is saved in update_user
     create_audit_log(
         db,
         actor=actor,
@@ -124,18 +116,15 @@ def create_or_update_company(db: Session, company: schemas.CompanyUpdate, actor:
     change_details = []
     
     if db_company:
-        # Compare and log changes for update
         if db_company.name != company.name:
             change_details.append(f"Changed name from '{db_company.name}' to '{company.name}'.")
             db_company.name = company.name
         if db_company.address != company.address:
             change_details.append(f"Changed address from '{db_company.address}' to '{company.address}'.")
             db_company.address = company.address
-        # (Location changes could be logged here as well if needed)
         db_company.location_lat = company.location.lat
         db_company.location_lng = company.location.lng
     else:
-        # Log creation
         change_details.append(f"Created company profile with name '{company.name}'.")
         db_company = models.Company(
             id=1,
@@ -219,7 +208,7 @@ def update_project(db: Session, project_id: str, project_update: schemas.Project
     return db_project
 
 # ==================
-#  LeaveRequest CRUD (NEW)
+#  LeaveRequest CRUD
 # ==================
 
 def create_leave_request(db: Session, request: schemas.LeaveRequestCreate, owner_id: int):
@@ -236,7 +225,6 @@ def get_leave_requests_by_owner(db: Session, owner_id: int):
     return db.query(models.LeaveRequest).filter(models.LeaveRequest.owner_id == owner_id).order_by(models.LeaveRequest.start_date.desc()).all()
 
 def get_all_leave_requests(db: Session, skip: int = 0, limit: int = 100):
-    # This query joins the LeaveRequest with the User table to fetch the owner's name
     return db.query(models.LeaveRequest, models.User.name.label("owner_name"))\
              .join(models.User, models.LeaveRequest.owner_id == models.User.id)\
              .order_by(models.LeaveRequest.created_at.desc()).offset(skip).limit(limit).all()
@@ -252,7 +240,6 @@ def update_leave_request_status(db: Session, request_id: int, status: str, revie
     db.commit()
     db.refresh(db_request)
 
-    # Create an audit log for this action
     create_audit_log(
         db,
         actor=reviewer,
@@ -263,3 +250,48 @@ def update_leave_request_status(db: Session, request_id: int, status: str, revie
     )
     
     return db_request
+
+# ==================
+#  AttendanceRecord CRUD (NEW)
+# ==================
+
+def create_check_in(db: Session, user_id: int):
+    """Creates a new attendance record for the day or returns an existing one."""
+    today = date.today()
+    # Check if a record for this user and date already exists
+    db_record = db.query(models.AttendanceRecord).filter(
+        models.AttendanceRecord.user_id == user_id,
+        models.AttendanceRecord.date == today
+    ).first()
+
+    if db_record:
+        return db_record # User is already checked in for today
+
+    # Create a new record
+    db_record = models.AttendanceRecord(user_id=user_id, date=today)
+    db.add(db_record)
+    db.commit()
+    db.refresh(db_record)
+    return db_record
+
+def create_check_out(db: Session, user_id: int):
+    """Finds today's attendance record and adds a check-out time."""
+    today = date.today()
+    db_record = db.query(models.AttendanceRecord).filter(
+        models.AttendanceRecord.user_id == user_id,
+        models.AttendanceRecord.date == today
+    ).first()
+
+    if db_record and not db_record.check_out_time:
+        db_record.check_out_time = date.today()
+        db.commit()
+        db.refresh(db_record)
+    
+    return db_record
+
+def get_attendance_records(db: Session, start_date: date, end_date: date):
+    """Gets all attendance records within a date range, joining with user names."""
+    return db.query(models.AttendanceRecord, models.User.name.label("user_name"))\
+             .join(models.User, models.AttendanceRecord.user_id == models.User.id)\
+             .filter(models.AttendanceRecord.date.between(start_date, end_date))\
+             .order_by(models.AttendanceRecord.date.desc(), models.User.name).all()

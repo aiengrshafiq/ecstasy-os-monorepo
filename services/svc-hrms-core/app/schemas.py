@@ -35,7 +35,6 @@ class CompanyUpdate(CompanyBase):
 
 class Company(CompanyBase):
     id: int
-    # *** MODIFIED: Timestamps are now optional to handle old records ***
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -56,7 +55,6 @@ class ProjectCreate(ProjectBase):
     pass
 
 class Project(ProjectBase):
-    # *** MODIFIED: Timestamps are now optional to handle old records ***
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     
@@ -99,7 +97,6 @@ class User(UserBase):
     id: int
     is_active: bool
     has_face_descriptor: bool = False
-    # *** MODIFIED: Timestamps are now optional to handle old records ***
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
@@ -121,7 +118,6 @@ class AuditLog(BaseModel):
 
     class Config:
         from_attributes = True
-    
 
 # ==================
 #  LeaveRequest Schemas (NEW)
@@ -148,6 +144,23 @@ class LeaveRequest(LeaveRequestBase):
     
     # Add a field to include owner's name for easy display on the frontend
     owner_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+# ==================
+#  AttendanceRecord Schemas (NEW)
+# ==================
+
+class AttendanceRecordBase(BaseModel):
+    date: date
+    check_in_time: datetime
+    check_out_time: Optional[datetime] = None
+
+class AttendanceRecord(AttendanceRecordBase):
+    id: int
+    user_id: int
+    user_name: Optional[str] = None # For easy display on the frontend
 
     class Config:
         from_attributes = True

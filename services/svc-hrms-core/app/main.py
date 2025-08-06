@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
 from typing import List
+from datetime import date
 
 from . import auth, crud, models, schemas, face_service
 from .database import engine, get_db
@@ -38,7 +39,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # --- Helper function to map User model to User schema ---
 def map_user_to_schema(user_model: models.User) -> schemas.User:
     user_data = schemas.User.from_orm(user_model).dict()
-    #user_data['has_face_descriptor'] = (user_model.face_descriptor is not None) or (user_model.azure_person_id is not None)
+    user_data['has_face_descriptor'] = (user_model.azure_person_id is not None)
     return schemas.User(**user_data)
 
 # --- Dependency for getting current user ---
@@ -83,11 +84,11 @@ async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth
 
 
 @app.post("/users/", response_model=schemas.User, status_code=status.HTTP_201_CREATED)
-def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
+def create_user(user: schemas.UserCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     db_user = crud.get_user_by_email(db, email=user.email)
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    created_user = crud.create_user(db=db, user=user)
+    created_user = crud.create_user(db=db, user=user, actor=current_user)
     return map_user_to_schema(created_user)
 
 
@@ -104,7 +105,6 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), c
 
 @app.put("/users/{user_id}", response_model=schemas.User)
 def update_user_profile(user_id: int, user_update: schemas.UserUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    #updated_user = crud.update_user(db, user_id=user_id, user_update=user_update)
     updated_user = crud.update_user(db, user_id=user_id, user_update=user_update, actor=current_user)
     if updated_user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -124,11 +124,13 @@ async def register_face(user_id: int, db: Session = Depends(get_db), file: Uploa
         person_id = db_user.azure_person_id
         if not person_id:
             person_id = face_service.create_person_in_group(name=db_user.name)
-            #crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(azure_person_id=person_id))
             crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(azure_person_id=person_id), actor=current_user)
         
         image_data = await file.read()
         face_service.add_face_to_person(person_id=person_id, image_stream=image_data)
+        
+        crud.register_user_face(db, user_id=user_id, actor=current_user)
+        
         updated_user = crud.get_user(db, user_id=user_id)
         return map_user_to_schema(updated_user)
 
@@ -140,42 +142,29 @@ async def register_face(user_id: int, db: Session = Depends(get_db), file: Uploa
 def read_company(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     company = crud.get_company(db)
     if company is None:
-        default_company_data = schemas.CompanyUpdate(
-            name="Default Company",
-            address="Not Set",
-            location=schemas.Location(lat=0.0, lng=0.0)
-        )
-        company = crud.create_or_update_company(db, company=default_company_data)
-
+        raise HTTPException(status_code=404, detail="Company profile not found. Please create one.")
+    
+    # *** CORRECTED SECTION: Manually build the response schema ***
     return schemas.Company(
         id=company.id,
         name=company.name,
         address=company.address,
-        location=schemas.Location(lat=company.location_lat, lng=company.location_lng)
+        location=schemas.Location(lat=company.location_lat, lng=company.location_lng),
+        created_at=company.created_at,
+        updated_at=company.updated_at
     )
+
 
 @app.put("/company/", response_model=schemas.Company)
 def update_company_profile(company_update: schemas.CompanyUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role != "Super Admin":
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    updated_company = crud.create_or_update_company(db, company=company_update)
-    return schemas.Company(
-        id=updated_company.id,
-        name=updated_company.name,
-        address=updated_company.address,
-        location=schemas.Location(lat=updated_company.location_lat, lng=updated_company.location_lng)
-    )
+    return crud.create_or_update_company(db, company=company_update, actor=current_user)
 
 
 @app.get("/projects/", response_model=List[schemas.Project])
 def read_projects(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    projects = crud.get_projects(db)
-    return [schemas.Project(
-        id=p.id,
-        name=p.name,
-        location=schemas.Location(lat=p.location_lat, lng=p.location_lng)
-    ) for p in projects]
+    return crud.get_projects(db)
 
 
 @app.put("/projects/{project_id}", response_model=schemas.Project)
@@ -183,79 +172,34 @@ def update_project_details(project_id: str, project_update: schemas.ProjectCreat
     if current_user.role not in ["Super Admin", "Admin"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
         
-    updated_project = crud.update_project(db, project_id=project_id, project_update=project_update)
-    if updated_project is None:
-        created_project = crud.create_project(db, project=project_update)
-        return schemas.Project(
-            id=created_project.id,
-            name=created_project.name,
-            location=schemas.Location(lat=created_project.location_lat, lng=created_project.location_lng)
-        )
-        
-    return schemas.Project(
-        id=updated_project.id,
-        name=updated_project.name,
-        location=schemas.Location(lat=updated_project.location_lat, lng=updated_project.location_lng)
-    )
-
-# --- NEW ENDPOINT ---
-@app.post("/attendance/verify-face")
-async def verify_check_in_face(db: Session = Depends(get_db), file: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
-    """
-    Verifies the face of the currently logged-in user for check-in.
-    """
-    if not current_user.azure_person_id:
-        raise HTTPException(status_code=400, detail="No face registered for this user.")
-
-    try:
-        image_data = await file.read()
-        result = face_service.verify_face(
-            person_id=current_user.azure_person_id,
-            image_stream=image_data
-        )
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Face verification failed: {str(e)}")
+    db_project = crud.update_project(db, project_id=project_id, project_update=project_update, actor=current_user)
+    if db_project is None:
+        return crud.create_project(db, project=project_update, actor=current_user)
+    return db_project
 
 
-# --- NEW ENDPOINT for Audit Logs ---
 @app.get("/audit-logs/{target_type}/{target_id}", response_model=List[schemas.AuditLog])
 def get_logs_for_target(target_type: str, target_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    """
-    Retrieves the history of changes for a specific target (e.g., a USER or PROJECT).
-    """
     if current_user.role not in ["Super Admin", "Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions to view audit logs")
     
     logs = crud.get_audit_logs_for_target(db, target_type=target_type.upper(), target_id=target_id)
     return logs
 
-# --- NEW: Leave Management Endpoints ---
-
 @app.post("/leave-requests/", response_model=schemas.LeaveRequest, status_code=status.HTTP_201_CREATED)
 def create_leave_request(request: schemas.LeaveRequestCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    """
-    Allows the currently logged-in user to submit a new leave request.
-    """
     return crud.create_leave_request(db=db, request=request, owner_id=current_user.id)
 
 @app.get("/leave-requests/me", response_model=List[schemas.LeaveRequest])
 def read_my_leave_requests(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    """
-    Retrieves all leave requests for the currently logged-in user.
-    """
     return crud.get_leave_requests_by_owner(db, owner_id=current_user.id)
 
 @app.get("/leave-requests/", response_model=List[schemas.LeaveRequest])
 def read_all_leave_requests(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    """
-    Retrieves all leave requests. Restricted to Admin/HR roles.
-    """
     if current_user.role not in ["Super Admin", "Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
     requests_with_names = crud.get_all_leave_requests(db)
-    # The CRUD function returns a list of tuples (LeaveRequest, owner_name). We need to map this to our schema.
     return [
         schemas.LeaveRequest(
             **request.__dict__,
@@ -265,9 +209,6 @@ def read_all_leave_requests(db: Session = Depends(get_db), current_user: models.
 
 @app.put("/leave-requests/{request_id}", response_model=schemas.LeaveRequest)
 def update_leave_request(request_id: int, request_update: schemas.LeaveRequestUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    """
-    Approves or denies a leave request. Restricted to Admin/HR roles.
-    """
     if current_user.role not in ["Super Admin", "Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
     
@@ -276,3 +217,42 @@ def update_leave_request(request_id: int, request_update: schemas.LeaveRequestUp
         raise HTTPException(status_code=404, detail="Leave request not found")
     
     return updated_request
+
+@app.post("/attendance/check-in", response_model=schemas.AttendanceRecord)
+async def check_in(db: Session = Depends(get_db), file: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
+    if not current_user.azure_person_id:
+        raise HTTPException(status_code=400, detail="No face registered for this user. Cannot check in.")
+    
+    try:
+        image_data = await file.read()
+        result = face_service.verify_face(
+            person_id=current_user.azure_person_id,
+            image_stream=image_data
+        )
+        if not result.get("is_identical"):
+            raise HTTPException(status_code=401, detail=f"Face verification failed. Confidence: {result.get('confidence', 0)}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Face verification failed: {str(e)}")
+    
+    record = crud.create_check_in(db, user_id=current_user.id)
+    return record
+
+@app.post("/attendance/check-out", response_model=schemas.AttendanceRecord)
+def check_out(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    record = crud.create_check_out(db, user_id=current_user.id)
+    if not record:
+        raise HTTPException(status_code=404, detail="No active check-in found for today.")
+    return record
+
+@app.get("/attendance/report", response_model=List[schemas.AttendanceRecord])
+def get_attendance_report(start_date: date, end_date: date, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    if current_user.role not in ["Super Admin", "Admin", "HR"]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+        
+    records_with_names = crud.get_attendance_records(db, start_date=start_date, end_date=end_date)
+    return [
+        schemas.AttendanceRecord(
+            **record.__dict__,
+            user_name=user_name
+        ) for record, user_name in records_with_names
+    ]

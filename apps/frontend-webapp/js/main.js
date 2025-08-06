@@ -1,5 +1,5 @@
 // =================================================================================
-// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Leave Management UI)
+// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Attendance Reporting)
 // =================================================================================
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -123,7 +123,7 @@ document.addEventListener('DOMContentLoaded', () => {
         dashboard: (user) => {
             const hour = new Date().getHours();
             const greeting = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-            const isAdmin = user.role === 'Admin' || user.role === 'Super Admin';
+            const isAdmin = ['Admin', 'Super Admin', 'HR'].includes(user.role);
 
             return `
                 <h2 class="text-3xl font-bold mb-2">${greeting}, ${user.name.split(' ')[0]}!</h2>
@@ -259,13 +259,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `,
-        // *** NEW TEMPLATE for Leave Management ***
         leave: (user) => {
-            const isAdmin = user.role === 'Admin' || user.role === 'Super Admin' || user.role === 'HR';
+            const isAdmin = ['Admin', 'Super Admin', 'HR'].includes(user.role);
             return `
                 <h2 class="text-3xl font-bold mb-6">Leave Management</h2>
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                    <!-- Left Column: Form or Admin View -->
                     <div class="lg:col-span-2">
                         ${isAdmin ? `
                             <div id="admin-leave-view">
@@ -301,7 +299,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             </div>
                         `}
                     </div>
-                    <!-- Right Column: My History -->
                     <div class="lg:col-span-1">
                         <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
                             <h3 class="font-semibold mb-4">My Leave History</h3>
@@ -310,7 +307,42 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>
             `;
-        }
+        },
+        // *** NEW TEMPLATE for Attendance Reporting ***
+        attendanceReport: () => `
+            <h2 class="text-3xl font-bold mb-6">Attendance Report</h2>
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                <div class="flex flex-wrap gap-4 items-end mb-6">
+                    <div>
+                        <label for="start-date-filter" class="block text-sm mb-1">Start Date</label>
+                        <input type="date" id="start-date-filter" class="input-field">
+                    </div>
+                    <div>
+                        <label for="end-date-filter" class="block text-sm mb-1">End Date</label>
+                        <input type="date" id="end-date-filter" class="input-field">
+                    </div>
+                    <button id="generate-report-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Generate Report</button>
+                    <button id="export-csv-btn" class="px-6 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 flex items-center justify-center">Export to CSV</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead class="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check In</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check Out</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Work Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                            <!-- Rows will be injected here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `,
     };
 
     // --- 6. INITIALIZATION AND AUTHENTICATION ---
@@ -418,6 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
             { view: 'dashboard', label: 'Dashboard', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'leave', label: 'Leave', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'attendance', label: 'Attendance', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
+            { view: 'attendance_report', label: 'Attendance Report', roles: ['Super Admin', 'Admin', 'HR'] },
             { view: 'employees', label: 'Employees', roles: ['Super Admin', 'Admin', 'HR'] },
             { view: 'projects', label: 'Projects', roles: ['Super Admin', 'Admin'] },
             { view: 'company', label: 'Company Profile', roles: ['Super Admin'] },
@@ -465,6 +498,10 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'attendance':
                 mainContent.innerHTML = templates.attendance(AppState.currentUser);
                 initializeAttendanceModule();
+                break;
+            case 'attendance_report':
+                mainContent.innerHTML = templates.attendanceReport();
+                initializeAttendanceReportModule();
                 break;
             case 'company':
                 mainContent.innerHTML = templates.company(AppState.companyProfile);
@@ -880,22 +917,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('file', blob, 'checkin_face.jpg');
 
                 try {
-                    const result = await apiFetch('/attendance/verify-face', {
+                    const result = await apiFetch('/attendance/check-in', {
                         method: 'POST',
                         body: formData,
                     });
 
-                    if (result.is_identical) {
-                        updateStatus('success', `Verification successful! (Confidence: ${result.confidence.toFixed(2)})`);
-                        AppState.checkInTime = new Date();
-                        document.getElementById('check-in-time').textContent = AppState.checkInTime.toLocaleTimeString();
-                        checkInBtn.classList.add('hidden');
-                        checkOutBtn.classList.remove('hidden');
-                    } else {
-                        updateStatus('error', 'Face does not match. Please try again.');
-                    }
+                    updateStatus('success', `Check-in successful!`);
+                    AppState.checkInTime = new Date(result.check_in_time);
+                    document.getElementById('check-in-time').textContent = AppState.checkInTime.toLocaleTimeString();
+                    checkInBtn.classList.add('hidden');
+                    checkOutBtn.classList.remove('hidden');
+
                 } catch (error) {
-                    updateStatus('error', `Verification failed: ${error.message}`);
+                    updateStatus('error', `Check-in failed: ${error.message}`);
                 } finally {
                     stopCamera();
                     setLoadingState(checkInBtn, false);
@@ -904,10 +938,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         function handleCheckOut() {
-            AppState.checkOutTime = new Date();
-            document.getElementById('check-out-time').textContent = AppState.checkOutTime.toLocaleTimeString();
-            updateStatus('success', 'Checked out successfully. Have a great day!');
-            checkOutBtn.classList.add('hidden');
+            setLoadingState(checkOutBtn, true);
+            apiFetch('/attendance/check-out', { method: 'POST' })
+                .then(result => {
+                    updateStatus('success', 'Checked out successfully. Have a great day!');
+                    AppState.checkOutTime = new Date(result.check_out_time);
+                    document.getElementById('check-out-time').textContent = AppState.checkOutTime.toLocaleTimeString();
+                    checkOutBtn.classList.add('hidden');
+                })
+                .catch(error => {
+                    updateStatus('error', `Check-out failed: ${error.message}`);
+                })
+                .finally(() => {
+                    setLoadingState(checkOutBtn, false);
+                });
         }
 
         function updateStatus(type, message) {
@@ -1037,6 +1081,125 @@ document.addEventListener('DOMContentLoaded', () => {
             showToast(`Error fetching history: ${error.message}`, 'error');
             closeModal();
         }
+    }
+
+    async function initializeLeaveModule() {
+        const isAdmin = ['Admin', 'Super Admin', 'HR'].includes(AppState.currentUser.role);
+
+        if (isAdmin) {
+            const pendingList = document.getElementById('pending-requests-list');
+            const resolvedList = document.getElementById('resolved-requests-list');
+            
+            async function renderAdminLists() {
+                try {
+                    const allRequests = await apiFetch('/leave-requests/');
+                    const pending = allRequests.filter(r => r.status === 'Pending');
+                    const resolved = allRequests.filter(r => r.status !== 'Pending');
+
+                    pendingList.innerHTML = pending.length ? pending.map(renderAdminRequestCard).join('') : '<p class="text-gray-500">No pending requests.</p>';
+                    resolvedList.innerHTML = resolved.length ? resolved.map(renderAdminRequestCard).join('') : '<p class="text-gray-500">No resolved requests.</p>';
+                    
+                    document.querySelectorAll('.approve-leave-btn, .deny-leave-btn').forEach(btn => {
+                        btn.addEventListener('click', async (e) => {
+                            const requestId = e.target.dataset.id;
+                            const status = e.target.dataset.status;
+                            setLoadingState(e.target, true);
+                            try {
+                                await apiFetch(`/leave-requests/${requestId}`, {
+                                    method: 'PUT',
+                                    body: JSON.stringify({ status: status })
+                                });
+                                showToast(`Request has been ${status.toLowerCase()}.`, 'success');
+                                renderAdminLists();
+                            } catch (error) {
+                                showToast(`Error: ${error.message}`, 'error');
+                                setLoadingState(e.target, false);
+                            }
+                        });
+                    });
+
+                } catch (error) {
+                    showToast(`Failed to load leave requests: ${error.message}`, 'error');
+                }
+            }
+            
+            function renderAdminRequestCard(req) {
+                return `
+                    <div class="p-4 border rounded-lg dark:border-gray-700">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="font-semibold">${req.owner_name}</p>
+                                <p class="text-sm">${req.leave_type} Leave: ${req.start_date} to ${req.end_date}</p>
+                                <p class="text-sm text-gray-500 mt-1">${req.reason}</p>
+                            </div>
+                            ${req.status === 'Pending' ? `
+                            <div class="flex gap-2">
+                                <button data-id="${req.id}" data-status="Approved" class="approve-leave-btn px-3 py-1 text-xs text-white bg-green-500 rounded-full hover:bg-green-600">Approve</button>
+                                <button data-id="${req.id}" data-status="Denied" class="deny-leave-btn px-3 py-1 text-xs text-white bg-red-500 rounded-full hover:bg-red-600">Deny</button>
+                            </div>
+                            ` : `<span class="text-sm font-bold ${req.status === 'Approved' ? 'text-green-500' : 'text-red-500'}">${req.status}</span>`}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            renderAdminLists();
+
+        } else {
+            const form = document.getElementById('leave-request-form');
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const submitButton = e.target.querySelector('button[type="submit"]');
+                setLoadingState(submitButton, true);
+
+                const formData = new FormData(e.target);
+                const requestData = Object.fromEntries(formData.entries());
+
+                try {
+                    await apiFetch('/leave-requests/', {
+                        method: 'POST',
+                        body: JSON.stringify(requestData)
+                    });
+                    showToast('Leave request submitted successfully!', 'success');
+                    form.reset();
+                    renderMyHistory();
+                } catch (error) {
+                    showToast(`Error: ${error.message}`, 'error');
+                } finally {
+                    setLoadingState(submitButton, false);
+                }
+            });
+        }
+        
+        const historyContainer = document.getElementById('my-leave-history');
+        async function renderMyHistory() {
+            try {
+                const myRequests = await apiFetch('/leave-requests/me');
+                if (myRequests.length === 0) {
+                    historyContainer.innerHTML = '<p class="text-gray-500 text-sm">You have not submitted any leave requests.</p>';
+                    return;
+                }
+                historyContainer.innerHTML = myRequests.map(req => {
+                    const statusColors = {
+                        Pending: 'bg-yellow-500',
+                        Approved: 'bg-green-500',
+                        Denied: 'bg-red-500'
+                    };
+                    return `
+                        <div>
+                            <div class="flex justify-between items-center">
+                                <p class="font-semibold text-sm">${req.leave_type} Leave</p>
+                                <span class="text-xs text-white px-2 py-0.5 rounded-full ${statusColors[req.status]}">${req.status}</span>
+                            </div>
+                            <p class="text-xs text-gray-500">${req.start_date} to ${req.end_date}</p>
+                        </div>
+                    `;
+                }).join('<hr class="my-3 dark:border-gray-700">');
+            } catch (error) {
+                 historyContainer.innerHTML = '<p class="text-red-500 text-sm">Could not load history.</p>';
+            }
+        }
+        renderMyHistory();
     }
 
     // --- 9. START THE APPLICATION ---

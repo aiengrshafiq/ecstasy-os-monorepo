@@ -21,7 +21,7 @@ class User(Base):
     azure_person_id = Column(String, nullable=True, unique=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now()) # Added server_default for initial creation
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
     
 class Project(Base):
     __tablename__ = "projects"
@@ -57,32 +57,35 @@ class AuditLog(Base):
     actor_email = Column(String)
 
     action = Column(String)
-
-    # --- NEW COLUMNS TO IDENTIFY THE SUBJECT OF THE LOG ---
-    target_type = Column(String, index=True) # e.g., "USER", "PROJECT"
-    target_id = Column(String, index=True)   # e.g., "123" (user id) or "proj-abc" (project id)
-
+    target_type = Column(String, index=True)
+    target_id = Column(String, index=True)
     details = Column(String, nullable=True)
-    
 
-# --- NEW TABLE MODEL for Leave Management ---
 class LeaveRequest(Base):
     __tablename__ = "leave_requests"
 
     id = Column(Integer, primary_key=True, index=True)
-    
-    # Who is requesting the leave
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    
-    # Details of the request
-    leave_type = Column(String, nullable=False) # e.g., "Annual", "Sick", "Unpaid"
+    leave_type = Column(String, nullable=False)
     start_date = Column(Date, nullable=False)
     end_date = Column(Date, nullable=False)
     reason = Column(String)
-    
-    # Status and management
-    status = Column(String, default="Pending", nullable=False) # "Pending", "Approved", "Denied"
-    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True) # Who approved/denied it
+    status = Column(String, default="Pending", nullable=False)
+    reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
+
+# --- NEW TABLE MODEL for Attendance History ---
+class AttendanceRecord(Base):
+    __tablename__ = "attendance_records"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    
+    # We use DateTime now to store the full timestamp
+    check_in_time = Column(DateTime(timezone=True), server_default=func.now())
+    check_out_time = Column(DateTime(timezone=True), nullable=True)
+    
+    # Store the date separately for easy filtering and reporting
+    date = Column(Date, nullable=False, default=func.current_date())
