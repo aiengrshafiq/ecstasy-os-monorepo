@@ -142,9 +142,15 @@ async def register_face(user_id: int, db: Session = Depends(get_db), file: Uploa
 def read_company(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     company = crud.get_company(db)
     if company is None:
-        raise HTTPException(status_code=404, detail="Company profile not found. Please create one.")
-    
-    # *** CORRECTED SECTION: Manually build the response schema ***
+        # If no company profile exists, create a default one
+        default_company_data = schemas.CompanyUpdate(
+            name="Default Company",
+            address="Not Set",
+            location=schemas.Location(lat=0.0, lng=0.0)
+        )
+        company = crud.create_or_update_company(db, company=default_company_data, actor=current_user)
+
+    # *** CORRECTED SECTION: Manually build the response schema to match Pydantic model ***
     return schemas.Company(
         id=company.id,
         name=company.name,
@@ -256,3 +262,74 @@ def get_attendance_report(start_date: date, end_date: date, db: Session = Depend
             user_name=user_name
         ) for record, user_name in records_with_names
     ]
+
+@app.post("/workflow-templates/", response_model=schemas.WorkflowTemplate, status_code=status.HTTP_201_CREATED)
+def create_workflow_template(template: schemas.WorkflowTemplateCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    if current_user.role not in ["Super Admin", "HR"]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    return crud.create_workflow_template(db=db, template=template)
+
+@app.get("/workflow-templates/", response_model=List[schemas.WorkflowTemplate])
+def read_workflow_templates(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    return crud.get_workflow_templates(db)
+
+@app.post("/workflow-instances/", response_model=schemas.WorkflowInstance)
+def create_workflow_instance(instance: schemas.WorkflowInstanceCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    if current_user.role not in ["Super Admin", "HR"]:
+        raise HTTPException(status_code=403, detail="Not enough permissions")
+    db_instance = crud.create_workflow_instance(db=db, instance=instance, actor=current_user)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return get_workflow_instance_details(instance_id=db_instance.id, db=db, current_user=current_user)
+
+@app.get("/workflow-instances/", response_model=List[schemas.WorkflowInstance])
+def read_workflow_instances(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    db_instances = crud.get_workflow_instances(db)
+    response = []
+    for instance in db_instances:
+        response.append(get_workflow_instance_details(instance_id=instance.id, db=db, current_user=current_user))
+    return response
+
+@app.get("/workflow-instances/{instance_id}", response_model=schemas.WorkflowInstance)
+def get_workflow_instance_details(instance_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    db_instance = crud.get_workflow_instance(db, instance_id=instance_id)
+    if not db_instance:
+        raise HTTPException(status_code=404, detail="Workflow instance not found")
+
+    user = crud.get_user(db, user_id=db_instance.user_id)
+    template = db.query(models.WorkflowTemplate).filter(models.WorkflowTemplate.id == db_instance.template_id).first()
+    
+    tasks = []
+    for task in db_instance.tasks:
+        completed_by_name = crud.get_user(db, user_id=task.completed_by_id).name if task.completed_by_id else None
+        tasks.append(schemas.WorkflowTask(
+            id=task.id,
+            title=task.title,
+            status=task.status,
+            completed_at=task.completed_at,
+            completed_by_name=completed_by_name
+        ))
+
+    return schemas.WorkflowInstance(
+        id=db_instance.id,
+        user_id=user.id,
+        user_name=user.name,
+        template_name=template.name,
+        status=db_instance.status,
+        created_at=db_instance.created_at,
+        tasks=tasks
+    )
+
+@app.put("/workflow-tasks/{task_id}", response_model=schemas.WorkflowTask)
+def update_workflow_task(task_id: int, task_update: schemas.WorkflowTaskUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
+    updated_task = crud.update_workflow_task_status(db, task_id=task_id, status=task_update.status, actor=current_user)
+    if not updated_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return schemas.WorkflowTask(
+        id=updated_task.id,
+        title=updated_task.title,
+        status=updated_task.status,
+        completed_at=updated_task.completed_at,
+        completed_by_name=current_user.name
+    )

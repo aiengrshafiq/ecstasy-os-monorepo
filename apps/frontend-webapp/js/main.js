@@ -1,5 +1,5 @@
 // =================================================================================
-// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Attendance Reporting)
+// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Onboarding UI)
 // =================================================================================
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -176,6 +176,39 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `,
+        attendanceReport: () => `
+            <h2 class="text-3xl font-bold mb-6">Attendance Report</h2>
+            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                <div class="flex flex-wrap gap-4 items-end mb-6">
+                    <div>
+                        <label for="start-date-filter" class="block text-sm mb-1">Start Date</label>
+                        <input type="date" id="start-date-filter" class="input-field">
+                    </div>
+                    <div>
+                        <label for="end-date-filter" class="block text-sm mb-1">End Date</label>
+                        <input type="date" id="end-date-filter" class="input-field">
+                    </div>
+                    <button id="generate-report-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Generate Report</button>
+                    <button id="export-csv-btn" class="px-6 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 flex items-center justify-center">Export to CSV</button>
+                </div>
+
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                        <thead class="bg-gray-50 dark:bg-gray-700">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check In</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check Out</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Work Hours</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `,
         company: (profile) => `
             <h2 class="text-3xl font-bold mb-6">Company Profile</h2>
             <div class="max-w-4xl mx-auto p-8 space-y-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
@@ -308,39 +341,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         },
-        // *** NEW TEMPLATE for Attendance Reporting ***
-        attendanceReport: () => `
-            <h2 class="text-3xl font-bold mb-6">Attendance Report</h2>
+        // *** NEW TEMPLATE for Onboarding/Offboarding ***
+        workflows: () => `
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-3xl font-bold">Workflows</h2>
+                <div>
+                    <button id="manage-templates-btn" class="px-4 py-2 text-sm text-blue-600 bg-blue-100 rounded-lg hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-200 dark:hover:bg-blue-800">Manage Templates</button>
+                    <button id="start-workflow-btn" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700 ml-2">Start New Workflow</button>
+                </div>
+            </div>
             <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
-                <div class="flex flex-wrap gap-4 items-end mb-6">
-                    <div>
-                        <label for="start-date-filter" class="block text-sm mb-1">Start Date</label>
-                        <input type="date" id="start-date-filter" class="input-field">
-                    </div>
-                    <div>
-                        <label for="end-date-filter" class="block text-sm mb-1">End Date</label>
-                        <input type="date" id="end-date-filter" class="input-field">
-                    </div>
-                    <button id="generate-report-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Generate Report</button>
-                    <button id="export-csv-btn" class="px-6 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 flex items-center justify-center">Export to CSV</button>
-                </div>
-
-                <div class="overflow-x-auto">
-                    <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                        <thead class="bg-gray-50 dark:bg-gray-700">
-                            <tr>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Employee</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check In</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Check Out</th>
-                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Work Hours</th>
-                            </tr>
-                        </thead>
-                        <tbody id="report-table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                            <!-- Rows will be injected here -->
-                        </tbody>
-                    </table>
-                </div>
+                <h3 class="font-semibold mb-4">Active Workflows</h3>
+                <div id="workflow-instances-list" class="space-y-4"></div>
             </div>
         `,
     };
@@ -448,6 +460,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function setupNavigation() {
         const navItems = [
             { view: 'dashboard', label: 'Dashboard', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
+            { view: 'workflows', label: 'Workflows', roles: ['Super Admin', 'Admin', 'HR'] },
             { view: 'leave', label: 'Leave', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'attendance', label: 'Attendance', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'attendance_report', label: 'Attendance Report', roles: ['Super Admin', 'Admin', 'HR'] },
@@ -518,6 +531,10 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'leave':
                 mainContent.innerHTML = templates.leave(AppState.currentUser);
                 initializeLeaveModule();
+                break;
+            case 'workflows':
+                mainContent.innerHTML = templates.workflows();
+                initializeWorkflowModule();
                 break;
         }
     }
@@ -1200,6 +1217,117 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         renderMyHistory();
+    }
+
+    function initializeAttendanceReportModule() {
+        const generateBtn = document.getElementById('generate-report-btn');
+        const exportBtn = document.getElementById('export-csv-btn');
+        const tableBody = document.getElementById('report-table-body');
+        let reportData = [];
+
+        // Set default dates
+        const endDateInput = document.getElementById('end-date-filter');
+        const startDateInput = document.getElementById('start-date-filter');
+        const today = new Date().toISOString().split('T')[0];
+        endDateInput.value = today;
+        const lastMonth = new Date();
+        lastMonth.setDate(lastMonth.getDate() - 30);
+        startDateInput.value = lastMonth.toISOString().split('T')[0];
+
+        async function generateReport() {
+            setLoadingState(generateBtn, true);
+            const startDate = startDateInput.value;
+            const endDate = endDateInput.value;
+            
+            if (!startDate || !endDate) {
+                showToast('Please select both a start and end date.', 'error');
+                setLoadingState(generateBtn, false);
+                return;
+            }
+
+            try {
+                const data = await apiFetch(`/attendance/report?start_date=${startDate}&end_date=${endDate}`);
+                reportData = data; // Save for export
+                
+                if (data.length === 0) {
+                    tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No records found for this date range.</td></tr>`;
+                    return;
+                }
+
+                tableBody.innerHTML = data.map(record => {
+                    const checkIn = new Date(record.check_in_time);
+                    const checkOut = record.check_out_time ? new Date(record.check_out_time) : null;
+                    let workHours = 'N/A';
+                    if (checkOut) {
+                        const diffMs = checkOut - checkIn;
+                        const hours = Math.floor(diffMs / 3600000);
+                        const minutes = Math.floor((diffMs % 3600000) / 60000);
+                        workHours = `${hours}h ${minutes}m`;
+                    }
+
+                    return `
+                        <tr>
+                            <td class="px-6 py-4 whitespace-nowrap">${record.date}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${record.user_name}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${checkIn.toLocaleTimeString()}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${checkOut ? checkOut.toLocaleTimeString() : 'Not checked out'}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">${workHours}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+            } catch (error) {
+                showToast(`Failed to generate report: ${error.message}`, 'error');
+                tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-red-500">Error loading data.</td></tr>`;
+            } finally {
+                setLoadingState(generateBtn, false);
+            }
+        }
+        
+        function exportToCSV() {
+            if (reportData.length === 0) {
+                showToast('No data to export. Please generate a report first.', 'info');
+                return;
+            }
+            
+            let csvContent = "data:text/csv;charset=utf-8,";
+            csvContent += "Date,Employee,Check In,Check Out,Work Hours\r\n";
+
+            reportData.forEach(record => {
+                const checkIn = new Date(record.check_in_time);
+                const checkOut = record.check_out_time ? new Date(record.check_out_time) : null;
+                let workHours = 'N/A';
+                if (checkOut) {
+                    const diffMs = checkOut - checkIn;
+                    const hours = Math.floor(diffMs / 3600000);
+                    const minutes = Math.floor((diffMs % 3600000) / 60000);
+                    workHours = `${hours}h ${minutes}m`;
+                }
+                
+                const row = [
+                    record.date,
+                    record.user_name,
+                    checkIn.toLocaleTimeString(),
+                    checkOut ? checkOut.toLocaleTimeString() : '',
+                    workHours
+                ].join(',');
+                csvContent += row + "\r\n";
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "attendance_report.csv");
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        }
+
+        generateBtn.addEventListener('click', generateReport);
+        exportBtn.addEventListener('click', exportToCSV);
+        
+        // Generate report on initial load
+        generateReport();
     }
 
     // --- 9. START THE APPLICATION ---

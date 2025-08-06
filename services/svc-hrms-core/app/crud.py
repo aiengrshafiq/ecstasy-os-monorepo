@@ -252,22 +252,19 @@ def update_leave_request_status(db: Session, request_id: int, status: str, revie
     return db_request
 
 # ==================
-#  AttendanceRecord CRUD (NEW)
+#  AttendanceRecord CRUD
 # ==================
 
 def create_check_in(db: Session, user_id: int):
-    """Creates a new attendance record for the day or returns an existing one."""
     today = date.today()
-    # Check if a record for this user and date already exists
     db_record = db.query(models.AttendanceRecord).filter(
         models.AttendanceRecord.user_id == user_id,
         models.AttendanceRecord.date == today
     ).first()
 
     if db_record:
-        return db_record # User is already checked in for today
+        return db_record
 
-    # Create a new record
     db_record = models.AttendanceRecord(user_id=user_id, date=today)
     db.add(db_record)
     db.commit()
@@ -275,7 +272,6 @@ def create_check_in(db: Session, user_id: int):
     return db_record
 
 def create_check_out(db: Session, user_id: int):
-    """Finds today's attendance record and adds a check-out time."""
     today = date.today()
     db_record = db.query(models.AttendanceRecord).filter(
         models.AttendanceRecord.user_id == user_id,
@@ -290,8 +286,79 @@ def create_check_out(db: Session, user_id: int):
     return db_record
 
 def get_attendance_records(db: Session, start_date: date, end_date: date):
-    """Gets all attendance records within a date range, joining with user names."""
     return db.query(models.AttendanceRecord, models.User.name.label("user_name"))\
              .join(models.User, models.AttendanceRecord.user_id == models.User.id)\
              .filter(models.AttendanceRecord.date.between(start_date, end_date))\
              .order_by(models.AttendanceRecord.date.desc(), models.User.name).all()
+
+# ==================
+#  Workflow & Task CRUD (NEW)
+# ==================
+
+def create_workflow_template(db: Session, template: schemas.WorkflowTemplateCreate):
+    db_template = models.WorkflowTemplate(name=template.name, type=template.type)
+    db.add(db_template)
+    db.commit()
+    db.refresh(db_template)
+    
+    for i, task_schema in enumerate(template.tasks):
+        db_task = models.TemplateTask(
+            template_id=db_template.id,
+            title=task_schema.title,
+            description=task_schema.description,
+            default_assignee_role=task_schema.default_assignee_role,
+            order=i
+        )
+        db.add(db_task)
+    
+    db.commit()
+    return db_template
+
+def get_workflow_templates(db: Session):
+    return db.query(models.WorkflowTemplate).options(joinedload(models.WorkflowTemplate.tasks)).all()
+
+def create_workflow_instance(db: Session, instance: schemas.WorkflowInstanceCreate, actor: models.User):
+    template = db.query(models.WorkflowTemplate).options(joinedload(models.WorkflowTemplate.tasks)).filter(models.WorkflowTemplate.id == instance.template_id).first()
+    if not template:
+        return None
+
+    db_instance = models.WorkflowInstance(template_id=instance.template_id, user_id=instance.user_id)
+    db.add(db_instance)
+    db.commit()
+    db.refresh(db_instance)
+
+    for template_task in template.tasks:
+        db_task = models.WorkflowTask(
+            instance_id=db_instance.id,
+            template_task_id=template_task.id,
+            title=template_task.title
+        )
+        db.add(db_task)
+    
+    db.commit()
+    
+    user = get_user(db, user_id=instance.user_id)
+    create_audit_log(db, actor, "WORKFLOW_STARTED", f"Started '{template.name}' workflow for user '{user.name}'.", "USER", str(user.id))
+    
+    return db_instance
+
+def get_workflow_instances(db: Session):
+    return db.query(models.WorkflowInstance).all()
+
+def get_workflow_instance(db: Session, instance_id: int):
+    return db.query(models.WorkflowInstance).options(joinedload(models.WorkflowInstance.tasks)).filter(models.WorkflowInstance.id == instance_id).first()
+
+def update_workflow_task_status(db: Session, task_id: int, status: str, actor: models.User):
+    db_task = db.query(models.WorkflowTask).filter(models.WorkflowTask.id == task_id).first()
+    if not db_task:
+        return None
+    
+    db_task.status = status
+    db_task.completed_by_id = actor.id
+    db_task.completed_at = date.today()
+    db.commit()
+    db.refresh(db_task)
+    
+    create_audit_log(db, actor, "TASK_COMPLETED", f"Completed task: '{db_task.title}'.", "WORKFLOW_INSTANCE", str(db_task.instance_id))
+    
+    return db_task

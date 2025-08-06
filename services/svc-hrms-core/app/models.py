@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Date, Time, Boolean, ARRAY, Float, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Date, Time, Boolean, ARRAY, Float, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import ARRAY as PG_ARRAY
 from sqlalchemy.sql import func
 from .database import Base
@@ -52,10 +52,8 @@ class AuditLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
-    
     actor_id = Column(Integer, ForeignKey("users.id"))
     actor_email = Column(String)
-
     action = Column(String)
     target_type = Column(String, index=True)
     target_id = Column(String, index=True)
@@ -72,20 +70,50 @@ class LeaveRequest(Base):
     reason = Column(String)
     status = Column(String, default="Pending", nullable=False)
     reviewed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
-# --- NEW TABLE MODEL for Attendance History ---
 class AttendanceRecord(Base):
     __tablename__ = "attendance_records"
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    
-    # We use DateTime now to store the full timestamp
     check_in_time = Column(DateTime(timezone=True), server_default=func.now())
     check_out_time = Column(DateTime(timezone=True), nullable=True)
-    
-    # Store the date separately for easy filtering and reporting
     date = Column(Date, nullable=False, default=func.current_date())
+
+# --- NEW TABLES for Onboarding/Offboarding ---
+
+class WorkflowTemplate(Base):
+    __tablename__ = "workflow_templates"
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, nullable=False) # e.g., "New Engineer Onboarding"
+    type = Column(String, nullable=False) # "ONBOARDING" or "OFFBOARDING"
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class TemplateTask(Base):
+    __tablename__ = "template_tasks"
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("workflow_templates.id"), nullable=False)
+    title = Column(String, nullable=False) # e.g., "Prepare Laptop"
+    description = Column(Text, nullable=True)
+    default_assignee_role = Column(String, nullable=False) # e.g., "HR", "IT", "Manager"
+    order = Column(Integer, default=0)
+
+class WorkflowInstance(Base):
+    __tablename__ = "workflow_instances"
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("workflow_templates.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False) # The employee being onboarded/offboarded
+    status = Column(String, default="In Progress") # "In Progress", "Completed"
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class WorkflowTask(Base):
+    __tablename__ = "workflow_tasks"
+    id = Column(Integer, primary_key=True, index=True)
+    instance_id = Column(Integer, ForeignKey("workflow_instances.id"), nullable=False)
+    template_task_id = Column(Integer, ForeignKey("template_tasks.id"), nullable=False)
+    title = Column(String, nullable=False) # Copied from template for historical record
+    status = Column(String, default="Pending") # "Pending", "Completed"
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    completed_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)

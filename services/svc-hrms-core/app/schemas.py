@@ -120,7 +120,7 @@ class AuditLog(BaseModel):
         from_attributes = True
 
 # ==================
-#  LeaveRequest Schemas (NEW)
+#  LeaveRequest Schemas
 # ==================
 
 class LeaveRequestBase(BaseModel):
@@ -133,7 +133,7 @@ class LeaveRequestCreate(LeaveRequestBase):
     pass
 
 class LeaveRequestUpdate(BaseModel):
-    status: str # "Approved" or "Denied"
+    status: str
 
 class LeaveRequest(LeaveRequestBase):
     id: int
@@ -141,15 +141,13 @@ class LeaveRequest(LeaveRequestBase):
     status: str
     created_at: datetime
     updated_at: Optional[datetime] = None
-    
-    # Add a field to include owner's name for easy display on the frontend
     owner_name: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 # ==================
-#  AttendanceRecord Schemas (NEW)
+#  AttendanceRecord Schemas
 # ==================
 
 class AttendanceRecordBase(BaseModel):
@@ -160,7 +158,67 @@ class AttendanceRecordBase(BaseModel):
 class AttendanceRecord(AttendanceRecordBase):
     id: int
     user_id: int
-    user_name: Optional[str] = None # For easy display on the frontend
+    user_name: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+# ==================
+#  Workflow & Task Schemas (NEW)
+# ==================
+
+class TemplateTaskBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    default_assignee_role: str # e.g., "HR", "IT", "Manager"
+
+class TemplateTask(TemplateTaskBase):
+    id: int
+    template_id: int
+    order: int
+
+    class Config:
+        from_attributes = True
+
+class WorkflowTemplateBase(BaseModel):
+    name: str
+    type: str # "ONBOARDING" or "OFFBOARDING"
+
+class WorkflowTemplateCreate(WorkflowTemplateBase):
+    tasks: List[TemplateTaskBase]
+
+class WorkflowTemplate(WorkflowTemplateBase):
+    id: int
+    tasks: List[TemplateTask] = []
+
+    class Config:
+        from_attributes = True
+
+class WorkflowTask(BaseModel):
+    id: int
+    title: str
+    status: str
+    completed_at: Optional[datetime] = None
+    completed_by_name: Optional[str] = None # For easy display
+
+    class Config:
+        from_attributes = True
+
+class WorkflowInstance(BaseModel):
+    id: int
+    user_id: int
+    user_name: str
+    template_name: str
+    status: str
+    created_at: datetime
+    tasks: List[WorkflowTask] = []
+
+    class Config:
+        from_attributes = True
+
+class WorkflowInstanceCreate(BaseModel):
+    template_id: int
+    user_id: int
+
+class WorkflowTaskUpdate(BaseModel):
+    status: str # "Completed"
