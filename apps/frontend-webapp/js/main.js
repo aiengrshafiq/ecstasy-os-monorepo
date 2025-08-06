@@ -1,5 +1,5 @@
 // =================================================================================
-// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with Onboarding UI)
+// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with All Modules)
 // =================================================================================
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function setLoadingState(button, isLoading) {
+        if (!button) return;
         if (isLoading) {
             if (!button.dataset.originalContent) {
                 button.dataset.originalContent = button.innerHTML;
@@ -180,18 +181,11 @@ document.addEventListener('DOMContentLoaded', () => {
             <h2 class="text-3xl font-bold mb-6">Attendance Report</h2>
             <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
                 <div class="flex flex-wrap gap-4 items-end mb-6">
-                    <div>
-                        <label for="start-date-filter" class="block text-sm mb-1">Start Date</label>
-                        <input type="date" id="start-date-filter" class="input-field">
-                    </div>
-                    <div>
-                        <label for="end-date-filter" class="block text-sm mb-1">End Date</label>
-                        <input type="date" id="end-date-filter" class="input-field">
-                    </div>
+                    <div><label for="start-date-filter" class="block text-sm mb-1">Start Date</label><input type="date" id="start-date-filter" class="input-field"></div>
+                    <div><label for="end-date-filter" class="block text-sm mb-1">End Date</label><input type="date" id="end-date-filter" class="input-field"></div>
                     <button id="generate-report-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Generate Report</button>
                     <button id="export-csv-btn" class="px-6 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600 flex items-center justify-center">Export to CSV</button>
                 </div>
-
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                         <thead class="bg-gray-50 dark:bg-gray-700">
@@ -203,8 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Work Hours</th>
                             </tr>
                         </thead>
-                        <tbody id="report-table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                        </tbody>
+                        <tbody id="report-table-body" class="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700"></tbody>
                     </table>
                 </div>
             </div>
@@ -341,7 +334,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             `;
         },
-        // *** NEW TEMPLATE for Onboarding/Offboarding ***
         workflows: () => `
             <div class="flex justify-between items-center mb-6">
                 <h2 class="text-3xl font-bold">Workflows</h2>
@@ -355,6 +347,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div id="workflow-instances-list" class="space-y-4"></div>
             </div>
         `,
+        payroll: (user) => {
+            const isAdmin = ['Super Admin', 'HR'].includes(user.role);
+            return `
+                <h2 class="text-3xl font-bold mb-6">Payroll</h2>
+                ${isAdmin ? `
+                    <!-- Admin View -->
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div class="lg:col-span-1">
+                            <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                                <h3 class="font-semibold mb-4">Run New Payroll</h3>
+                                <form id="run-payroll-form" class="space-y-4">
+                                    <div>
+                                        <label class="block text-sm mb-1">Select Month & Year</label>
+                                        <input type="month" name="period" class="w-full input-field" required>
+                                    </div>
+                                    <button type="submit" class="w-full px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Run Payroll</button>
+                                </form>
+                            </div>
+                        </div>
+                        <div class="lg:col-span-2">
+                             <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                                <h3 class="font-semibold mb-4">Payroll History</h3>
+                                <div id="payroll-history-list"></div>
+                            </div>
+                        </div>
+                    </div>
+                ` : `
+                    <!-- Employee View -->
+                    <div class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6">
+                        <h3 class="font-semibold mb-4">My Payslips</h3>
+                        <div id="my-payslips-list" class="space-y-3"></div>
+                    </div>
+                `}
+            `;
+        }
     };
 
     // --- 6. INITIALIZATION AND AUTHENTICATION ---
@@ -465,6 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
             { view: 'attendance', label: 'Attendance', roles: ['Super Admin', 'Admin', 'HR', 'Employee'] },
             { view: 'attendance_report', label: 'Attendance Report', roles: ['Super Admin', 'Admin', 'HR'] },
             { view: 'employees', label: 'Employees', roles: ['Super Admin', 'Admin', 'HR'] },
+            { view: 'payroll', label: 'Payroll', roles: ['Super Admin', 'HR', 'Employee'] },
             { view: 'projects', label: 'Projects', roles: ['Super Admin', 'Admin'] },
             { view: 'company', label: 'Company Profile', roles: ['Super Admin'] },
         ];
@@ -535,6 +563,10 @@ document.addEventListener('DOMContentLoaded', () => {
             case 'workflows':
                 mainContent.innerHTML = templates.workflows();
                 initializeWorkflowModule();
+                break;
+            case 'payroll':
+                mainContent.innerHTML = templates.payroll(AppState.currentUser);
+                initializePayrollModule();
                 break;
         }
     }
@@ -1225,7 +1257,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const tableBody = document.getElementById('report-table-body');
         let reportData = [];
 
-        // Set default dates
         const endDateInput = document.getElementById('end-date-filter');
         const startDateInput = document.getElementById('start-date-filter');
         const today = new Date().toISOString().split('T')[0];
@@ -1247,7 +1278,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             try {
                 const data = await apiFetch(`/attendance/report?start_date=${startDate}&end_date=${endDate}`);
-                reportData = data; // Save for export
+                reportData = data;
                 
                 if (data.length === 0) {
                     tableBody.innerHTML = `<tr><td colspan="5" class="text-center py-4 text-gray-500">No records found for this date range.</td></tr>`;
@@ -1326,8 +1357,45 @@ document.addEventListener('DOMContentLoaded', () => {
         generateBtn.addEventListener('click', generateReport);
         exportBtn.addEventListener('click', exportToCSV);
         
-        // Generate report on initial load
         generateReport();
+    }
+    
+    async function initializeWorkflowModule() {
+        const instancesList = document.getElementById('workflow-instances-list');
+        
+        async function renderInstances() {
+            try {
+                const instances = await apiFetch('/workflow-instances/');
+                if (instances.length === 0) {
+                    instancesList.innerHTML = '<p class="text-gray-500">No active workflows.</p>';
+                    return;
+                }
+                instancesList.innerHTML = instances.map(instance => {
+                    const completedTasks = instance.tasks.filter(t => t.status === 'Completed').length;
+                    const totalTasks = instance.tasks.length;
+                    const progress = totalTasks > 0 ? (completedTasks / totalTasks) * 100 : 0;
+
+                    return `
+                        <div class="p-4 border rounded-lg dark:border-gray-700">
+                            <div class="flex justify-between items-center">
+                                <div>
+                                    <p class="font-semibold">${instance.template_name} for ${instance.user_name}</p>
+                                    <p class="text-sm text-gray-500">${instance.status} - ${completedTasks} of ${totalTasks} tasks complete</p>
+                                </div>
+                                <button class="text-sm text-blue-500 hover:underline">View Details</button>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700 mt-2">
+                                <div class="bg-blue-600 h-2.5 rounded-full" style="width: ${progress}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            } catch (error) {
+                showToast(`Error loading workflows: ${error.message}`, 'error');
+            }
+        }
+
+        renderInstances();
     }
 
     // --- 9. START THE APPLICATION ---

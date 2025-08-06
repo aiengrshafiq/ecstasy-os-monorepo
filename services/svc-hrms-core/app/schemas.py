@@ -164,13 +164,13 @@ class AttendanceRecord(AttendanceRecordBase):
         from_attributes = True
 
 # ==================
-#  Workflow & Task Schemas (NEW)
+#  Workflow & Task Schemas
 # ==================
 
 class TemplateTaskBase(BaseModel):
     title: str
     description: Optional[str] = None
-    default_assignee_role: str # e.g., "HR", "IT", "Manager"
+    default_assignee_role: str
 
 class TemplateTask(TemplateTaskBase):
     id: int
@@ -182,7 +182,7 @@ class TemplateTask(TemplateTaskBase):
 
 class WorkflowTemplateBase(BaseModel):
     name: str
-    type: str # "ONBOARDING" or "OFFBOARDING"
+    type: str
 
 class WorkflowTemplateCreate(WorkflowTemplateBase):
     tasks: List[TemplateTaskBase]
@@ -199,7 +199,7 @@ class WorkflowTask(BaseModel):
     title: str
     status: str
     completed_at: Optional[datetime] = None
-    completed_by_name: Optional[str] = None # For easy display
+    completed_by_name: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -221,4 +221,54 @@ class WorkflowInstanceCreate(BaseModel):
     user_id: int
 
 class WorkflowTaskUpdate(BaseModel):
-    status: str # "Completed"
+    status: str
+
+# ==================
+#  Payroll Schemas (NEW)
+# ==================
+
+class SalaryBase(BaseModel):
+    gross_salary: float
+    pay_frequency: str
+    effective_date: date
+
+class SalaryCreate(SalaryBase):
+    user_id: int
+
+class Salary(SalaryBase):
+    id: int
+    is_current: bool
+
+    class Config:
+        from_attributes = True
+
+class BankDetailsBase(BaseModel):
+    bank_name: str
+    account_number: str
+    iban: str
+
+class BankDetailsCreate(BankDetailsBase):
+    user_id: int
+
+class BankDetails(BankDetailsBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+class PayslipBase(BaseModel):
+    pay_period_start: date
+    pay_period_end: date
+    gross_salary: float
+    deductions: float
+    net_salary: float
+    status: str
+
+class Payslip(PayslipBase):
+    id: int
+    user_id: int
+    user_name: Optional[str] = None
+    run_date: datetime
+
+    class Config:
+        from_attributes = True

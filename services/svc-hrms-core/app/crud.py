@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Session, joinedload
-from datetime import date
+from datetime import date, datetime
 from . import models, schemas
 from .auth import get_password_hash
 
@@ -279,7 +279,7 @@ def create_check_out(db: Session, user_id: int):
     ).first()
 
     if db_record and not db_record.check_out_time:
-        db_record.check_out_time = date.today()
+        db_record.check_out_time = datetime.now()
         db.commit()
         db.refresh(db_record)
     
@@ -292,9 +292,9 @@ def get_attendance_records(db: Session, start_date: date, end_date: date):
              .order_by(models.AttendanceRecord.date.desc(), models.User.name).all()
 
 # ==================
-#  Workflow & Task CRUD (NEW)
+#  Workflow & Task CRUD
 # ==================
-
+# (Existing Workflow functions are unchanged)
 def create_workflow_template(db: Session, template: schemas.WorkflowTemplateCreate):
     db_template = models.WorkflowTemplate(name=template.name, type=template.type)
     db.add(db_template)
@@ -355,10 +355,70 @@ def update_workflow_task_status(db: Session, task_id: int, status: str, actor: m
     
     db_task.status = status
     db_task.completed_by_id = actor.id
-    db_task.completed_at = date.today()
+    db_task.completed_at = datetime.now()
     db.commit()
     db.refresh(db_task)
     
     create_audit_log(db, actor, "TASK_COMPLETED", f"Completed task: '{db_task.title}'.", "WORKFLOW_INSTANCE", str(db_task.instance_id))
     
     return db_task
+
+# ==================
+#  Payroll CRUD (NEW)
+# ==================
+
+def create_or_update_salary(db: Session, salary: schemas.SalaryCreate, actor: models.User):
+    # Step 1: Set all other salaries for this user to is_current = False
+    db.query(models.Salary).filter(models.Salary.user_id == salary.user_id).update({"is_current": False})
+    
+    # Step 2: Create the new salary record
+    db_salary = models.Salary(**salary.dict(), is_current=True)
+    db.add(db_salary)
+    db.commit()
+    db.refresh(db_salary)
+
+    user = get_user(db, user_id=salary.user_id)
+    create_audit_log(db, actor, "SALARY_UPDATE", f"Set salary for '{user.name}' to {salary.gross_salary} effective {salary.effective_date}.", "USER", str(user.id))
+    
+    return db_salary
+
+def get_current_salary_for_user(db: Session, user_id: int):
+    return db.query(models.Salary).filter(models.Salary.user_id == user_id, models.Salary.is_current == True).first()
+
+def create_or_update_bank_details(db: Session, details: schemas.BankDetailsCreate, actor: models.User):
+    db_details = db.query(models.BankDetails).filter(models.BankDetails.user_id == details.user_id).first()
+    
+    if db_details: # Update
+        db_details.bank_name = details.bank_name
+        db_details.account_number = details.account_number
+        db_details.iban = details.iban
+    else: # Create
+        db_details = models.BankDetails(**details.dict())
+        db.add(db_details)
+        
+    db.commit()
+    db.refresh(db_details)
+
+    user = get_user(db, user_id=details.user_id)
+    create_audit_log(db, actor, "BANK_DETAILS_UPDATE", f"Updated bank details for '{user.name}'.", "USER", str(user.id))
+    
+    return db_details
+
+def get_bank_details_for_user(db: Session, user_id: int):
+    return db.query(models.BankDetails).filter(models.BankDetails.user_id == user_id).first()
+
+def create_payslip(db: Session, payslip_data: schemas.PayslipBase, user_id: int):
+    db_payslip = models.Payslip(**payslip_data.dict(), user_id=user_id)
+    db.add(db_payslip)
+    db.commit()
+    db.refresh(db_payslip)
+    return db_payslip
+
+def get_payslips_for_user(db: Session, user_id: int):
+    return db.query(models.Payslip).filter(models.Payslip.user_id == user_id).order_by(models.Payslip.pay_period_end.desc()).all()
+
+def get_all_payslips_for_period(db: Session, start_date: date, end_date: date):
+    return db.query(models.Payslip, models.User.name.label("user_name"))\
+             .join(models.User, models.Payslip.user_id == models.User.id)\
+             .filter(models.Payslip.pay_period_start >= start_date, models.Payslip.pay_period_end <= end_date)\
+             .order_by(models.User.name).all()
