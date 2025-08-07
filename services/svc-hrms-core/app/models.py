@@ -18,7 +18,7 @@ class User(Base):
     work_week = Column(ARRAY(String))
     allowed_locations = Column(ARRAY(String))
     is_active = Column(Boolean, default=True)
-    azure_person_id = Column(String, nullable=True, unique=True)
+    rekognition_face_id = Column(String, nullable=True, unique=True)
     
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

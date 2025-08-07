@@ -1,3 +1,5 @@
+# services/svc-hrms-core/app/main.py
+
 from fastapi import Depends, FastAPI, HTTPException, status, File, UploadFile
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
@@ -7,20 +9,21 @@ from typing import List
 from datetime import date, timedelta
 import calendar
 
-from . import auth, crud, models, schemas, face_service
+# --- MODIFIED: Import rekognition_service instead of face_service ---
+from . import auth, crud, models, schemas, rekognition_service
 from .database import engine, get_db
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
 
-# --- Application Startup Event ---
+# --- MODIFIED: Application Startup Event to use Rekognition ---
 @app.on_event("startup")
 async def on_startup():
-    face_service.initialize_person_group()
+    rekognition_service.initialize_collection()
 
 
-# --- Security & CORS ---
+# --- Security & CORS (Unchanged) ---
 origins = [
     "http://localhost",
     "http://localhost:8000",
@@ -37,13 +40,14 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# --- Helper function to map User model to User schema ---
+# --- MODIFIED: Helper function to map User model to User schema ---
 def map_user_to_schema(user_model: models.User) -> schemas.User:
     user_data = schemas.User.from_orm(user_model).dict()
-    user_data['has_face_descriptor'] = (user_model.azure_person_id is not None)
+    # Check for the new rekognition_face_id
+    user_data['has_face_descriptor'] = (user_model.rekognition_face_id is not None)
     return schemas.User(**user_data)
 
-# --- Dependency for getting current user ---
+# --- Dependency for getting current user (Unchanged) ---
 async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -58,7 +62,7 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Sessi
         token_data = schemas.TokenData(email=email)
     except JWTError:
         raise credentials_exception
-    
+
     user = crud.get_user_by_email(db, email=token_data.email)
     if user is None:
         raise credentials_exception
@@ -71,7 +75,7 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Sessi
 # API ENDPOINTS
 # ===================================================================
 
-# ... (Existing User, Company, Project, Audit, Leave, and Attendance endpoints remain unchanged) ...
+# ... (Token, User creation, etc. remain unchanged) ...
 
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
@@ -105,27 +109,63 @@ def update_user_profile(user_id: int, user_update: schemas.UserUpdate, db: Sessi
         raise HTTPException(status_code=404, detail="User not found")
     return map_user_to_schema(updated_user)
 
+
+# --- MODIFIED: /register-face endpoint to use Rekognition ---
 @app.post("/users/{user_id}/register-face", response_model=schemas.User)
 async def register_face(user_id: int, db: Session = Depends(get_db), file: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
+
     db_user = crud.get_user(db, user_id=user_id)
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    # A user can only have one face registered.
+    if db_user.rekognition_face_id:
+        raise HTTPException(status_code=400, detail="User already has a registered face. Please remove it first to add a new one.")
+
     try:
-        person_id = db_user.azure_person_id
-        if not person_id:
-            person_id = face_service.create_person_in_group(name=db_user.name)
-            crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(azure_person_id=person_id), actor=current_user)
         image_data = await file.read()
-        face_service.add_face_to_person(person_id=person_id, image_stream=image_data)
+        # Index the face in the Rekognition collection
+        face_id = rekognition_service.index_face(image_bytes=image_data)
+
+        # Save the returned FaceId to the user's profile
+        crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(rekognition_face_id=face_id), actor=current_user)
+        
+        # Log this action
         crud.register_user_face(db, user_id=user_id, actor=current_user)
+        
         updated_user = crud.get_user(db, user_id=user_id)
         return map_user_to_schema(updated_user)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Azure face registration failed: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Amazon Rekognition failed: {str(e)}")
 
 
+# --- MODIFIED: /check-in endpoint to use Rekognition ---
+@app.post("/attendance/check-in", response_model=schemas.AttendanceRecord)
+async def check_in(db: Session = Depends(get_db), file: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
+    if not current_user.rekognition_face_id:
+        raise HTTPException(status_code=400, detail="No face registered for this user.")
+
+    try:
+        image_data = await file.read()
+        # Search for the face in the collection
+        matched_face_id = rekognition_service.search_for_face(image_bytes=image_data)
+
+        # Verify if the matched face belongs to the current user
+        if matched_face_id != current_user.rekognition_face_id:
+            # This is a critical security check. The face matched someone, but not the person logged in.
+            raise HTTPException(status_code=401, detail="Face verification failed. The detected face does not belong to the logged-in user.")
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Face verification failed: {str(e)}")
+
+    # If verification is successful, create the check-in record
+    record = crud.create_check_in(db, user_id=current_user.id)
+    return record
+
+
+# ... (All other endpoints for Company, Projects, Audit, Leave, Workflows, and Payroll remain unchanged) ...
 @app.get("/company/", response_model=schemas.Company)
 def read_company(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     company = crud.get_company(db)
@@ -138,7 +178,6 @@ def read_company(db: Session = Depends(get_db), current_user: models.User = Depe
         )
         company = crud.create_or_update_company(db, company=default_company_data, actor=current_user)
 
-    # *** CORRECTED SECTION: Manually build the response schema to match Pydantic model ***
     return schemas.Company(
         id=company.id,
         name=company.name,
@@ -197,20 +236,6 @@ def update_leave_request(request_id: int, request_update: schemas.LeaveRequestUp
     if not updated_request:
         raise HTTPException(status_code=404, detail="Leave request not found")
     return updated_request
-
-@app.post("/attendance/check-in", response_model=schemas.AttendanceRecord)
-async def check_in(db: Session = Depends(get_db), file: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
-    if not current_user.azure_person_id:
-        raise HTTPException(status_code=400, detail="No face registered for this user.")
-    try:
-        image_data = await file.read()
-        result = face_service.verify_face(person_id=current_user.azure_person_id, image_stream=image_data)
-        if not result.get("is_identical"):
-            raise HTTPException(status_code=401, detail=f"Face verification failed. Confidence: {result.get('confidence', 0)}")
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Face verification failed: {str(e)}")
-    record = crud.create_check_in(db, user_id=current_user.id)
-    return record
 
 @app.post("/attendance/check-out", response_model=schemas.AttendanceRecord)
 def check_out(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
@@ -273,8 +298,6 @@ def update_workflow_task(task_id: int, task_update: schemas.WorkflowTaskUpdate, 
         raise HTTPException(status_code=404, detail="Task not found")
     return schemas.WorkflowTask(id=updated_task.id, title=updated_task.title, status=updated_task.status, completed_at=updated_task.completed_at, completed_by_name=current_user.name)
 
-# --- NEW: Payroll Endpoints ---
-
 @app.post("/salaries/", response_model=schemas.Salary)
 def create_or_update_salary(salary: schemas.SalaryCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "HR"]:
@@ -312,7 +335,7 @@ def run_payroll_for_month(year: int, month: int, db: Session = Depends(get_db), 
 
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
-    
+
     all_users = crud.get_users(db, limit=1000) # Get all users
     generated_payslips = []
 
@@ -321,8 +344,6 @@ def run_payroll_for_month(year: int, month: int, db: Session = Depends(get_db), 
         if not salary:
             continue # Skip users without salary info
 
-        # Basic deduction calculation (e.g., based on unpaid leave)
-        # This is a simplified example. A real system would be more complex.
         deductions = 0.0
         unpaid_leave_requests = db.query(models.LeaveRequest).filter(
             models.LeaveRequest.owner_id == user.id,
@@ -334,7 +355,6 @@ def run_payroll_for_month(year: int, month: int, db: Session = Depends(get_db), 
 
         daily_rate = salary.gross_salary / 30 # Simplified daily rate
         for req in unpaid_leave_requests:
-            # Calculate overlap of leave period with the pay period
             overlap_start = max(req.start_date, start_date)
             overlap_end = min(req.end_date, end_date)
             if overlap_end >= overlap_start:
@@ -353,7 +373,7 @@ def run_payroll_for_month(year: int, month: int, db: Session = Depends(get_db), 
         )
         payslip = crud.create_payslip(db, payslip_data=payslip_data, user_id=user.id)
         generated_payslips.append(payslip)
-    
+
     return generated_payslips
 
 @app.get("/payslips/me", response_model=List[schemas.Payslip])
@@ -364,10 +384,10 @@ def read_my_payslips(db: Session = Depends(get_db), current_user: models.User = 
 def read_payslips_for_period(year: int, month: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    
+
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
-    
+
     payslips_with_names = crud.get_all_payslips_for_period(db, start_date=start_date, end_date=end_date)
     return [
         schemas.Payslip(

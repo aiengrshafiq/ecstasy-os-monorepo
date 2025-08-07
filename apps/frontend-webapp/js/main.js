@@ -1397,6 +1397,88 @@ document.addEventListener('DOMContentLoaded', () => {
 
         renderInstances();
     }
+    
+    async function initializePayrollModule() {
+        const isAdmin = ['Super Admin', 'HR'].includes(AppState.currentUser.role);
+        
+        if (isAdmin) {
+            const runPayrollForm = document.getElementById('run-payroll-form');
+            const historyList = document.getElementById('payroll-history-list');
+
+            const lastMonth = new Date();
+            lastMonth.setMonth(lastMonth.getMonth() - 1);
+            const year = lastMonth.getFullYear();
+            const month = (lastMonth.getMonth() + 1).toString().padStart(2, '0');
+            runPayrollForm.querySelector('input[name="period"]').value = `${year}-${month}`;
+
+            runPayrollForm.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const submitButton = e.target.querySelector('button[type="submit"]');
+                setLoadingState(submitButton, true);
+                
+                const period = e.target.querySelector('input[name="period"]').value;
+                const [year, month] = period.split('-');
+
+                try {
+                    const payslips = await apiFetch(`/payroll/run/${year}/${month}`, { method: 'POST' });
+                    showToast(`Successfully ran payroll for ${month}/${year} for ${payslips.length} employees.`, 'success');
+                    renderPayrollHistory();
+                } catch (error) {
+                    showToast(`Error running payroll: ${error.message}`, 'error');
+                } finally {
+                    setLoadingState(submitButton, false);
+                }
+            });
+
+            async function renderPayrollHistory() {
+                historyList.innerHTML = '<p class="text-gray-500">Loading history...</p>';
+                const period = runPayrollForm.querySelector('input[name="period"]').value;
+                const [year, month] = period.split('-');
+                try {
+                    const payslips = await apiFetch(`/payslips/${year}/${month}`);
+                    if (payslips.length > 0) {
+                         historyList.innerHTML = `
+                            <div class="p-4 border rounded-lg dark:border-gray-700">
+                                <p class="font-semibold">Payroll for ${month}/${year}</p>
+                                <p class="text-sm text-gray-500">${payslips.length} payslips generated.</p>
+                                <button class="text-sm text-blue-500 hover:underline mt-2">View Details</button>
+                            </div>
+                         `;
+                    } else {
+                        historyList.innerHTML = '<p class="text-gray-500">No payroll history found for this period.</p>';
+                    }
+                } catch (error) {
+                     historyList.innerHTML = '<p class="text-red-500">Could not load payroll history.</p>';
+                }
+            }
+            renderPayrollHistory();
+
+        } else {
+            // Employee View
+            const payslipList = document.getElementById('my-payslips-list');
+            async function renderMyPayslips() {
+                try {
+                    const payslips = await apiFetch('/payslips/me');
+                    if (payslips.length === 0) {
+                        payslipList.innerHTML = '<p class="text-gray-500">No payslips available.</p>';
+                        return;
+                    }
+                    payslipList.innerHTML = payslips.map(p => `
+                        <div class="p-3 border rounded-lg dark:border-gray-700 flex justify-between items-center">
+                            <div>
+                                <p class="font-semibold">Payslip for ${p.pay_period_start} to ${p.pay_period_end}</p>
+                                <p class="text-sm text-gray-500">Net Salary: ${p.net_salary.toFixed(2)}</p>
+                            </div>
+                            <button class="text-sm text-blue-500 hover:underline">Download</button>
+                        </div>
+                    `).join('');
+                } catch (error) {
+                    payslipList.innerHTML = '<p class="text-red-500">Could not load payslips.</p>';
+                }
+            }
+            renderMyPayslips();
+        }
+    }
 
     // --- 9. START THE APPLICATION ---
     init();
