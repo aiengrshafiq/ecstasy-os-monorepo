@@ -1,9 +1,11 @@
+# services/svc-hrms-core/app/schemas.py
+
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 from datetime import date, time, datetime
 
 # ==================
-#  Reusable Schemas
+#  Reusable Schemas
 # ==================
 
 class Location(BaseModel):
@@ -11,7 +13,7 @@ class Location(BaseModel):
     lng: float
 
 # ==================
-#  Token Schemas
+#  Token Schemas
 # ==================
 
 class Token(BaseModel):
@@ -22,7 +24,7 @@ class TokenData(BaseModel):
     email: Optional[str] = None
 
 # ==================
-#  Company Schemas
+#  Company Schemas
 # ==================
 
 class CompanyBase(BaseModel):
@@ -42,7 +44,7 @@ class Company(CompanyBase):
         from_attributes = True
 
 # ==================
-#  Project Schemas
+#  Project Schemas
 # ==================
 
 class ProjectBase(BaseModel):
@@ -62,7 +64,7 @@ class Project(ProjectBase):
         from_attributes = True
 
 # ==================
-#  User Schemas
+#  User Schemas
 # ==================
 
 class FaceRegistration(BaseModel):
@@ -91,7 +93,8 @@ class UserUpdate(BaseModel):
     work_end_time: Optional[time] = None
     work_week: Optional[List[str]] = None
     allowed_locations: Optional[List[str]] = None
-    azure_person_id: Optional[str] = None
+    # --- CORRECTED: Changed from azure_person_id ---
+    rekognition_face_id: Optional[str] = None
 
 class User(UserBase):
     id: int
@@ -104,7 +107,7 @@ class User(UserBase):
         from_attributes = True
 
 # ==================
-#  AuditLog Schemas
+#  AuditLog Schemas
 # ==================
 
 class AuditLog(BaseModel):
@@ -120,7 +123,7 @@ class AuditLog(BaseModel):
         from_attributes = True
 
 # ==================
-#  LeaveRequest Schemas
+#  LeaveRequest Schemas
 # ==================
 
 class LeaveRequestBase(BaseModel):
@@ -147,7 +150,7 @@ class LeaveRequest(LeaveRequestBase):
         from_attributes = True
 
 # ==================
-#  AttendanceRecord Schemas
+#  AttendanceRecord Schemas
 # ==================
 
 class AttendanceRecordBase(BaseModel):
@@ -164,13 +167,17 @@ class AttendanceRecord(AttendanceRecordBase):
         from_attributes = True
 
 # ==================
-#  Workflow & Task Schemas
+#  Workflow & Task Schemas
 # ==================
 
 class TemplateTaskBase(BaseModel):
     title: str
     description: Optional[str] = None
     default_assignee_role: str
+
+# --- NEW: Added TemplateTaskCreate for the seeder script ---
+class TemplateTaskCreate(TemplateTaskBase):
+    pass
 
 class TemplateTask(TemplateTaskBase):
     id: int
@@ -185,7 +192,8 @@ class WorkflowTemplateBase(BaseModel):
     type: str
 
 class WorkflowTemplateCreate(WorkflowTemplateBase):
-    tasks: List[TemplateTaskBase]
+    # This now correctly uses TemplateTaskCreate
+    tasks: List[TemplateTaskCreate]
 
 class WorkflowTemplate(WorkflowTemplateBase):
     id: int
@@ -224,7 +232,7 @@ class WorkflowTaskUpdate(BaseModel):
     status: str
 
 # ==================
-#  Payroll Schemas (NEW)
+#  Payroll Schemas
 # ==================
 
 class SalaryBase(BaseModel):
