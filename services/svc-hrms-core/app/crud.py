@@ -1,10 +1,12 @@
+# services/svc-hrms-core/app/crud.py
+
 from sqlalchemy.orm import Session, joinedload
 from datetime import date, datetime
 from . import models, schemas
 from .auth import get_password_hash
 
 # ==================
-#  AuditLog CRUD
+#  AuditLog CRUD
 # ==================
 
 def create_audit_log(db: Session, actor: models.User, action: str, details: str, target_type: str = None, target_id: str = None):
@@ -28,7 +30,7 @@ def get_audit_logs_for_target(db: Session, target_type: str, target_id: str):
 
 
 # ==================
-#  User CRUD
+#  User CRUD
 # ==================
 
 def get_user(db: Session, user_id: int):
@@ -38,7 +40,7 @@ def get_user_by_email(db: Session, email: str):
     return db.query(models.User).filter(models.User.email == email).first()
 
 def get_users(db: Session, skip: int = 0, limit: int = 100):
-    return db.query(models.User).offset(skip).limit(limit).all()
+    return db.query(models.User).order_by(models.User.name).offset(skip).limit(limit).all()
 
 def create_user(db: Session, user: schemas.UserCreate, actor: models.User):
     hashed_password = get_password_hash(user.password)
@@ -106,7 +108,7 @@ def register_user_face(db: Session, user_id: int, actor: models.User):
     return db_user
 
 # ==================
-#  Company CRUD
+#  Company CRUD
 # ==================
 def get_company(db: Session):
     return db.query(models.Company).filter(models.Company.id == 1).first()
@@ -149,10 +151,15 @@ def create_or_update_company(db: Session, company: schemas.CompanyUpdate, actor:
     return db_company
 
 # ==================
-#  Project CRUD
+#  Project CRUD
 # ==================
+
+# --- NEW FUNCTION: Added to get a single project by its ID ---
+def get_project(db: Session, project_id: str):
+    return db.query(models.Project).filter(models.Project.id == project_id).first()
+
 def get_projects(db: Session):
-    return db.query(models.Project).all()
+    return db.query(models.Project).order_by(models.Project.name).all()
 
 def create_project(db: Session, project: schemas.ProjectCreate, actor: models.User):
     db_project = models.Project(
@@ -178,7 +185,7 @@ def create_project(db: Session, project: schemas.ProjectCreate, actor: models.Us
     return db_project
 
 def update_project(db: Session, project_id: str, project_update: schemas.ProjectCreate, actor: models.User):
-    db_project = db.query(models.Project).filter(models.Project.id == project_id).first()
+    db_project = get_project(db, project_id=project_id) # Now this function exists
     if not db_project:
         return None
     
@@ -193,9 +200,11 @@ def update_project(db: Session, project_id: str, project_update: schemas.Project
     db_project.location_lat = project_update.location.lat
     db_project.location_lng = project_update.location.lng
     
+    # Always commit location changes, even if other details haven't changed
+    db.commit()
+    db.refresh(db_project)
+    
     if change_details:
-        db.commit()
-        db.refresh(db_project)
         create_audit_log(
             db,
             actor=actor,
@@ -208,7 +217,7 @@ def update_project(db: Session, project_id: str, project_update: schemas.Project
     return db_project
 
 # ==================
-#  LeaveRequest CRUD
+#  LeaveRequest CRUD
 # ==================
 
 def create_leave_request(db: Session, request: schemas.LeaveRequestCreate, owner_id: int):
@@ -226,8 +235,8 @@ def get_leave_requests_by_owner(db: Session, owner_id: int):
 
 def get_all_leave_requests(db: Session, skip: int = 0, limit: int = 100):
     return db.query(models.LeaveRequest, models.User.name.label("owner_name"))\
-             .join(models.User, models.LeaveRequest.owner_id == models.User.id)\
-             .order_by(models.LeaveRequest.created_at.desc()).offset(skip).limit(limit).all()
+        .join(models.User, models.LeaveRequest.owner_id == models.User.id)\
+        .order_by(models.LeaveRequest.created_at.desc()).offset(skip).limit(limit).all()
 
 def update_leave_request_status(db: Session, request_id: int, status: str, reviewer: models.User):
     db_request = get_leave_request(db, request_id)
@@ -252,7 +261,7 @@ def update_leave_request_status(db: Session, request_id: int, status: str, revie
     return db_request
 
 # ==================
-#  AttendanceRecord CRUD
+#  AttendanceRecord CRUD
 # ==================
 
 def create_check_in(db: Session, user_id: int):
@@ -287,14 +296,13 @@ def create_check_out(db: Session, user_id: int):
 
 def get_attendance_records(db: Session, start_date: date, end_date: date):
     return db.query(models.AttendanceRecord, models.User.name.label("user_name"))\
-             .join(models.User, models.AttendanceRecord.user_id == models.User.id)\
-             .filter(models.AttendanceRecord.date.between(start_date, end_date))\
-             .order_by(models.AttendanceRecord.date.desc(), models.User.name).all()
+        .join(models.User, models.AttendanceRecord.user_id == models.User.id)\
+        .filter(models.AttendanceRecord.date.between(start_date, end_date))\
+        .order_by(models.AttendanceRecord.date.desc(), models.User.name).all()
 
 # ==================
-#  Workflow & Task CRUD
+#  Workflow & Task CRUD
 # ==================
-# (Existing Workflow functions are unchanged)
 def create_workflow_template(db: Session, template: schemas.WorkflowTemplateCreate):
     db_template = models.WorkflowTemplate(name=template.name, type=template.type)
     db.add(db_template)
@@ -364,14 +372,12 @@ def update_workflow_task_status(db: Session, task_id: int, status: str, actor: m
     return db_task
 
 # ==================
-#  Payroll CRUD (NEW)
+#  Payroll CRUD
 # ==================
 
 def create_or_update_salary(db: Session, salary: schemas.SalaryCreate, actor: models.User):
-    # Step 1: Set all other salaries for this user to is_current = False
     db.query(models.Salary).filter(models.Salary.user_id == salary.user_id).update({"is_current": False})
     
-    # Step 2: Create the new salary record
     db_salary = models.Salary(**salary.dict(), is_current=True)
     db.add(db_salary)
     db.commit()
@@ -388,11 +394,11 @@ def get_current_salary_for_user(db: Session, user_id: int):
 def create_or_update_bank_details(db: Session, details: schemas.BankDetailsCreate, actor: models.User):
     db_details = db.query(models.BankDetails).filter(models.BankDetails.user_id == details.user_id).first()
     
-    if db_details: # Update
+    if db_details:
         db_details.bank_name = details.bank_name
         db_details.account_number = details.account_number
         db_details.iban = details.iban
-    else: # Create
+    else:
         db_details = models.BankDetails(**details.dict())
         db.add(db_details)
         
@@ -419,6 +425,6 @@ def get_payslips_for_user(db: Session, user_id: int):
 
 def get_all_payslips_for_period(db: Session, start_date: date, end_date: date):
     return db.query(models.Payslip, models.User.name.label("user_name"))\
-             .join(models.User, models.Payslip.user_id == models.User.id)\
-             .filter(models.Payslip.pay_period_start >= start_date, models.Payslip.pay_period_end <= end_date)\
-             .order_by(models.User.name).all()
+        .join(models.User, models.Payslip.user_id == models.User.id)\
+        .filter(models.Payslip.pay_period_start >= start_date, models.Payslip.pay_period_end <= end_date)\
+        .order_by(models.User.name).all()

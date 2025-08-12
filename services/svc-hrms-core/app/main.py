@@ -43,9 +43,20 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 # --- MODIFIED: Helper function to map User model to User schema ---
 def map_user_to_schema(user_model: models.User) -> schemas.User:
     user_data = schemas.User.from_orm(user_model).dict()
-    # Check for the new rekognition_face_id
     user_data['has_face_descriptor'] = (user_model.rekognition_face_id is not None)
     return schemas.User(**user_data)
+
+# --- THIS IS THE MISSING FUNCTION ---
+def map_project_to_schema(project_model: models.Project) -> schemas.Project:
+    """Helper function to correctly format the project response."""
+    return schemas.Project(
+        id=project_model.id,
+        name=project_model.name,
+        status=project_model.status,
+        location=schemas.Location(lat=project_model.location_lat, lng=project_model.location_lng),
+        created_at=project_model.created_at,
+        updated_at=project_model.updated_at
+    )
 
 # --- Dependency for getting current user (Unchanged) ---
 async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
@@ -192,20 +203,43 @@ def read_company(db: Session = Depends(get_db), current_user: models.User = Depe
 def update_company_profile(company_update: schemas.CompanyUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role != "Super Admin":
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    return crud.create_or_update_company(db, company=company_update, actor=current_user)
+    
+    # The crud function returns the updated SQLAlchemy model object
+    updated_company_model = crud.create_or_update_company(db, company=company_update, actor=current_user)
+
+    # Manually build the Pydantic response model from the SQLAlchemy object
+    return schemas.Company(
+        id=updated_company_model.id,
+        name=updated_company_model.name,
+        address=updated_company_model.address,
+        location=schemas.Location(lat=updated_company_model.location_lat, lng=updated_company_model.location_lng),
+        created_at=updated_company_model.created_at,
+        updated_at=updated_company_model.updated_at
+    )
 
 @app.get("/projects/", response_model=List[schemas.Project])
 def read_projects(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
-    return crud.get_projects(db)
+    projects = crud.get_projects(db)
+    # Use the helper function to map each project
+    return [map_project_to_schema(p) for p in projects]
 
+# --- CORRECTED: This endpoint now also manually builds the response ---
 @app.put("/projects/{project_id}", response_model=schemas.Project)
 def update_project_details(project_id: str, project_update: schemas.ProjectCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "Admin"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    db_project = crud.update_project(db, project_id=project_id, project_update=project_update, actor=current_user)
-    if db_project is None:
-        return crud.create_project(db, project=project_update, actor=current_user)
-    return db_project
+    
+    # Check if the project exists to decide whether to create or update
+    db_project_model = crud.get_project(db, project_id=project_id)
+    
+    if db_project_model:
+        # Update existing project
+        updated_project_model = crud.update_project(db, project_id=project_id, project_update=project_update, actor=current_user)
+        return map_project_to_schema(updated_project_model)
+    else:
+        # Create new project
+        new_project_model = crud.create_project(db, project=project_update, actor=current_user)
+        return map_project_to_schema(new_project_model)
 
 @app.get("/audit-logs/{target_type}/{target_id}", response_model=List[schemas.AuditLog])
 def get_logs_for_target(target_type: str, target_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
