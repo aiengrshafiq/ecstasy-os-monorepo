@@ -1,0 +1,57 @@
+# .github/workflows/deploy-backend.yml
+
+# Name of the workflow, which will be displayed in the "Actions" tab of your GitHub repository.
+name: Build and Deploy HRMS Backend to Azure
+
+# This workflow triggers automatically on any push event to the 'main' branch.
+on:
+  push:
+    branches:
+      - main
+  # Allows you to run this workflow manually from the Actions tab as well.
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    # The type of runner that the job will run on. We use the latest Ubuntu version.
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out your repository code
+      # This action checks-out your repository under $GITHUB_WORKSPACE, so your job can access it.
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
+
+      # Step 2: Log in to Azure Container Registry (ACR)
+      # This uses a secret to securely log in to your private container registry on Azure.
+      - name: 'Login to Azure Container Registry'
+        uses: azure/docker-login@v1
+        with:
+          login-server: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      # Step 3: Build and push the Docker image to ACR
+      # This step runs the 'docker build' command using your Dockerfile and then 'docker push'
+      # to upload the built image to your registry. The image is tagged with the unique GitHub commit SHA.
+      - name: 'Build and push image to Azure Container Registry'
+        run: |
+          docker build . -t ${{ secrets.ACR_LOGIN_SERVER }}/hrms-api:${{ github.sha }}
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/hrms-api:${{ github.sha }}
+
+      # Step 4: Log in to Azure CLI
+      # This step is needed to interact with your Azure resources, like the App Service for deployment.
+      - name: 'Login to Azure CLI'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # Step 5: Deploy the new image to Azure App Service
+      # This command tells your Azure App Service to update its web app configuration
+      # to use the new Docker image we just pushed to the container registry.
+      - name: 'Deploy to Azure App Service'
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ secrets.AZURE_APP_NAME }} # The name of your App Service
+          images: '${{ secrets.ACR_LOGIN_SERVER }}/hrms-api:${{ github.sha }}'
+
