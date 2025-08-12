@@ -1,0 +1,46 @@
+# .github/workflows/deploy-frontend.yml
+
+name: Deploy Frontend to Azure Storage
+
+# This workflow triggers on any push to the 'main' branch, but only if files
+# inside the 'apps/frontend-webapp' directory have changed.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/frontend-webapp/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-static-website:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
+
+      - name: 'Login to Azure CLI'
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: 'Upload to Azure Blob Storage'
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az storage blob upload-batch --account-name ecstasyosfrontendstorage --auth-mode key -d '$web' -s ./apps/frontend-webapp
+            
+      - name: 'Purge CDN endpoint'
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            # This step is optional but recommended for production to clear caches.
+            # For now, we will just log a message.
+            echo "CDN purge step would go here if a CDN was configured."
+
+      - name: Azure logout
+        run: |
+          az logout
+          az cache purge
+          az account clear
