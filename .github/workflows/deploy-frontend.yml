@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 'Checkout GitHub Action'
+      - name: 'Checkout repository code'
         uses: actions/checkout@v4
 
       - name: 'Login to Azure CLI'
@@ -23,33 +23,22 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      # STEP 1 (CORRECTED): Use 'az storage sync' to robustly upload files
-      # This command is better than 'upload-batch' because it also removes old files
-      # that you may have deleted from your project.
-      - name: 'Sync files to Azure Blob Storage'
+      # Step 1: Delete all existing files in the $web container for a clean deployment.
+      # This ensures that any files you've deleted in your code are also removed from the server.
+      - name: 'Clear existing static website files'
         uses: azure/CLI@v1
         with:
           inlineScript: |
-            az storage sync --source ./apps/frontend-webapp \
-                            --container '$web' \
-                            --account-name ecstasyosfrontendstorage \
-                            --connection-string '${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}' \
-                            --delete-destination true
-            
-      # STEP 2 (NEW): Purge the CDN endpoint to clear the cache
-      # This forces the CDN to fetch the new files you just uploaded.
-      - name: 'Purge Static Website CDN Endpoint'
-        uses: azure/CLI@v1
-        with:
-          inlineScript: |
-            az storage account blob-service-properties update \
-              --account-name ecstasyosfrontendstorage \
-              --enable-static-website true \
-              --404-document index.html \
-              --index-document index.html
-            echo "CDN cache for the static website has been refreshed."
+            az storage blob delete-batch --source '$web' --account-name ecstasyosfrontendstorage --connection-string '${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}'
 
-      - name: Azure logout
+      # Step 2 (CORRECTED): Use the core 'upload-batch' command to upload all new files.
+      - name: 'Upload new files to Azure Blob Storage'
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az storage blob upload-batch --account-name ecstasyosfrontendstorage --destination '$web' --source ./apps/frontend-webapp --connection-string '${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}'
+
+      - name: 'Azure logout'
         run: |
           az logout
           az cache purge
