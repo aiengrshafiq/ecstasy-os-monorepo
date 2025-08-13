@@ -1,45 +1,70 @@
-/*
-  This file contains custom styles that complement Tailwind CSS.
+/* By default, apply a basic set of styles from Tailwind */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Define custom component styles using @apply.
+  This is the best-practice way to create reusable, consistent styles with Tailwind.
 */
+@layer components {
+  /*
+   * 1. STYLED INPUT FIELDS
+   * This single class will style all <input>, <select>, and <textarea> elements,
+   * fixing the "basic" look and the invisible text issue.
+  */
+  .input-field {
+    @apply w-full px-4 py-2 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg;
+    @apply text-gray-900 dark:text-gray-100; /* Ensures text is visible in both modes */
+    @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+    @apply transition-colors duration-200;
+  }
 
-/* Smooth transition for views appearing/disappearing */
-.view {
-    display: none;
-    animation: fadeIn 0.5s;
+  /*
+   * 2. STYLED BUTTONS
+   * Creates a base button style and specific color variants.
+  */
+  .btn {
+    @apply w-full flex items-center justify-center px-5 py-3 text-base font-medium rounded-lg;
+    @apply focus:outline-none focus:ring-4;
+    @apply transition-transform transform hover:scale-105;
+  }
+
+  .btn-primary {
+    @apply text-white bg-blue-600 hover:bg-blue-700 focus:ring-blue-300 dark:focus:ring-blue-900;
+  }
+  
+  /* This specifically fixes the resizing issue on the login button when "Processing..." appears */
+  .btn-processing {
+    @apply h-[52px]; /* Set a fixed height matching the default button height */
+  }
+
+  /*
+   * 3. BASE TEXT COLOR
+   * This ensures all text on inner pages is visible by default.
+  */
+  body {
+    @apply bg-gray-50 text-gray-800 dark:bg-gray-900 dark:text-gray-200;
+    font-family: 'Inter', sans-serif;
+  }
 }
 
-.view.active {
-    display: block;
-}
-
-/* A simple fade-in animation */
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-
-/*
-  Custom classes for active navigation links.
-  While we can do this with JavaScript and Tailwind, having a dedicated class
-  can make the JavaScript code cleaner.
+/* This section handles the browser's ugly yellow autofill background,
+  making it match our app's theme.
 */
-.nav-button.active {
-    /* These are Tailwind classes that we are applying via a custom CSS class */
-    @apply bg-blue-600 text-white shadow-lg;
-}
+@layer utilities {
+    input:-webkit-autofill,
+    input:-webkit-autofill:hover,
+    input:-webkit-autofill:focus,
+    input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 30px #f3f4f6 inset !important; /* Light mode autofill bg */
+        -webkit-text-fill-color: #111827 !important; /* Light mode autofill text */
+    }
 
-.mobile-nav-button.active {
-    /* For the bottom navigation on mobile */
-    @apply text-blue-600;
-}
-
-/* Styling for Leaflet map popups to match our dark/light theme */
-.leaflet-popup-content-wrapper, .leaflet-popup-tip {
-    background-color: white;
-    color: #1f2937; /* gray-800 */
-}
-
-html.dark .leaflet-popup-content-wrapper, html.dark .leaflet-popup-tip {
-    background-color: #1f2937; /* gray-800 */
-    color: #f3f4f6; /* gray-100 */
+    html.dark input:-webkit-autofill,
+    html.dark input:-webkit-autofill:hover,
+    html.dark input:-webkit-autofill:focus,
+    html.dark input:-webkit-autofill:active {
+        -webkit-box-shadow: 0 0 0 30px #374151 inset !important; /* Dark mode autofill bg */
+        -webkit-text-fill-color: #f3f4f6 !important; /* Dark mode autofill text */
+    }
 }

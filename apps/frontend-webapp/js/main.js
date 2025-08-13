@@ -1,11 +1,11 @@
 // =================================================================================
-// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with All Modules)
+// MAIN APPLICATION SCRIPT FOR ECSTASY OS (Final Version with All QA Fixes)
 // =================================================================================
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. CONFIGURATION & STATE ---
-    //const API_BASE_URL = 'http://127.0.0.1:8000';
-    const API_BASE_URL = 'https://ecstasyos-hrms-api.azurewebsites.net';
+    const API_BASE_URL = 'http://127.0.0.1:8000'; // For local testing
+    // const API_BASE_URL = 'https://ecstasyos-hrms-api.azurewebsites.net'; // For production
 
     const AppState = {
         currentUser: null,
@@ -55,6 +55,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 button.dataset.originalContent = button.innerHTML;
             }
             button.disabled = true;
+            button.classList.add('h-[52px]'); // Fix for button resizing
             button.innerHTML = `
                 <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -67,19 +68,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 button.innerHTML = button.dataset.originalContent;
                 delete button.dataset.originalContent;
             }
+            button.classList.remove('h-[52px]');
             button.disabled = false;
         }
     }
-
-    const style = document.createElement('style');
-    style.innerHTML = `
-        @keyframes fade-in-down { 0% { opacity: 0; transform: translateY(-20px); } 100% { opacity: 1; transform: translateY(0); } }
-        @keyframes fade-out-up { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-20px); } }
-        .animate-fade-in-down { animation: fade-in-down 0.5s ease-out forwards; }
-        .animate-fade-out-up { animation: fade-out-up 0.5s ease-in forwards; }
-    `;
-    document.head.appendChild(style);
-
 
     // --- 4. API HELPER FUNCTIONS ---
     async function apiFetch(endpoint, options = {}) {
@@ -170,7 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <video id="video-feed" autoplay muted playsinline class="w-full h-full object-cover"></video>
                     <div id="camera-off-overlay" class="absolute inset-0 flex flex-col items-center justify-center text-white"><p>Camera is off</p></div>
                 </div>
-                <div id="status-message" class="p-4 rounded-lg border-l-4 flex items-center"></div>
+                <div id="status-message" class="p-4 rounded-lg border-l-4 flex items-center hidden"></div>
                 <div class="flex flex-col sm:flex-row gap-4">
                     <button id="toggle-camera-btn" class="flex-1 flex items-center justify-center px-6 py-3 text-white bg-gray-500 rounded-lg hover:bg-gray-600">Turn On Camera</button>
                     <button id="check-in-btn" class="flex-1 flex items-center justify-center px-6 py-3 text-white bg-green-600 rounded-lg hover:bg-green-700">Check In</button>
@@ -206,8 +198,8 @@ document.addEventListener('DOMContentLoaded', () => {
         company: (profile) => `
             <h2 class="text-3xl font-bold mb-6">Company Profile</h2>
             <div class="max-w-4xl mx-auto p-8 space-y-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
-                <div><label class="block mb-1 text-sm font-medium">Company Name</label><input id="company-name-input" value="${profile.name}" class="w-full input-field"></div>
-                <div><label class="block mb-1 text-sm font-medium">Address</label><input id="company-address-input" value="${profile.address}" class="w-full input-field"></div>
+                <div><label class="block mb-1 text-sm font-medium">Company Name</label><input id="company-name-input" value="${profile.name}" class="input-field"></div>
+                <div><label class="block mb-1 text-sm font-medium">Address</label><input id="company-address-input" value="${profile.address}" class="input-field"></div>
                 <div><label class="block mb-2 text-sm font-medium">Company Geofence Location</label><div id="company-map" style="height: 300px; width: 100%; border-radius: 0.5rem;"></div></div>
                 <button id="save-company-btn" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Save Changes</button>
             </div>
@@ -237,10 +229,10 @@ document.addEventListener('DOMContentLoaded', () => {
                             <button id="add-new-employee-btn" class="px-3 py-1 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700">+ New</button>
                         </div>
                         <div class="relative mb-4">
-                            <input id="employee-search-input" type="text" placeholder="Search by name..." class="w-full pl-10 pr-4 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600">
+                            <input id="employee-search-input" type="text" placeholder="Search by name..." class="input-field w-full pl-10 pr-4 py-2 border rounded-lg">
                             <svg class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
                         </div>
-                        <div id="employees-list" class="space-y-2 flex-grow"></div>
+                        <div id="employees-list" class="space-y-2 flex-grow overflow-y-auto"></div>
                         <div id="employee-pagination" class="mt-4 flex justify-between items-center"></div>
                     </div>
                     <div id="employee-form-container" class="lg:col-span-2 p-6 bg-white dark:bg-gray-800 rounded-2xl shadow-lg">
@@ -249,6 +241,85 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
         `,
+        employeeForm: (user, canEditPayroll) => {
+            const isNewUser = !user.id;
+            const userWorkWeek = user.work_week || [];
+            const userAllowedLocations = user.allowed_locations || [];
+            const workWeekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            const allLocations = [{id: 'company', name: 'Company HQ'}, ...AppState.projects];
+
+            return `
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-semibold text-lg">${isNewUser ? 'Create New Employee' : `Edit Employee: ${user.name}`}</h3>
+                    ${!isNewUser ? `<button id="view-history-btn" class="text-sm text-blue-500 hover:underline">View History</button>` : ''}
+                </div>
+                <form id="employee-form" class="space-y-6">
+                    <div class="p-4 border rounded-lg dark:border-gray-600">
+                        <h4 class="font-medium mb-4">Job Details</h4>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label class="block text-sm mb-1">Full Name</label><input name="name" value="${user.name || ''}" class="input-field" required></div>
+                            <div><label class="block text-sm mb-1">Email</label><input name="email" type="email" value="${user.email || ''}" class="input-field" ${!isNewUser ? 'disabled' : ''} required></div>
+                            ${isNewUser ? `<div><label class="block text-sm mb-1">Password</label><input name="password" type="password" class="input-field" required></div>` : ''}
+                            <div><label class="block text-sm mb-1">Role</label>
+                                <select name="role" class="input-field">
+                                    <option ${user.role === 'Employee' ? 'selected' : ''}>Employee</option>
+                                    <option ${user.role === 'HR' ? 'selected' : ''}>HR</option>
+                                    <option ${user.role === 'Admin' ? 'selected' : ''}>Admin</option>
+                                    <option ${user.role === 'Super Admin' ? 'selected' : ''}>Super Admin</option>
+                                </select>
+                            </div>
+                            <div><label class="block text-sm mb-1">Hiring Date</label><input name="hiring_date" type="date" value="${user.hiring_date || ''}" class="input-field"></div>
+                            <div><label class="block text-sm mb-1">Probation End</label><input name="probation_end" type="date" value="${user.probation_end || ''}" class="input-field"></div>
+                        </div>
+                    </div>
+                    <div class="p-4 border dark:border-gray-600 rounded-lg">
+                        <h4 class="font-medium mb-4">Work Schedule</h4>
+                        <div class="mb-4"><label class="block mb-2 text-sm">Work Week</label>
+                            <div class="flex flex-wrap gap-2">
+                                ${workWeekDays.map(day => `<button type="button" data-day="${day}" class="work-day-btn px-3 py-1 text-sm rounded-full ${userWorkWeek.includes(day) ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-600'}">${day}</button>`).join('')}
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div><label class="block text-sm mb-1">Start Time</label><input name="work_start_time" type="time" value="${user.work_start_time || ''}" class="input-field"></div>
+                            <div><label class="block text-sm mb-1">End Time</label><input name="work_end_time" type="time" value="${user.work_end_time || ''}" class="input-field"></div>
+                        </div>
+                    </div>
+                    <div class="p-4 border dark:border-gray-600 rounded-lg">
+                        <h4 class="font-medium mb-4">Permissions & Security</h4>
+                        <div class="mb-4">
+                            <h5 class="font-medium text-sm mb-2">Allowed Login Locations</h5>
+                            <div class="space-y-2">
+                                ${allLocations.map(loc => `
+                                    <label class="flex items-center"><input type="checkbox" data-location="${loc.id}" class="location-checkbox h-4 w-4" ${userAllowedLocations.includes(loc.id) ? 'checked' : ''}><span class="ml-2">${loc.name}</span></label>
+                                `).join('')}
+                            </div>
+                        </div>
+                        ${!isNewUser ? `
+                        <div>
+                            <h5 class="font-medium text-sm mb-2">Facial Recognition</h5>
+                            <button id="register-face-btn" type="button" class="px-4 py-2 text-sm text-white ${user.has_face_descriptor ? 'bg-green-600' : 'bg-gray-600'} rounded-lg hover:opacity-80 flex items-center justify-center">
+                                ${user.has_face_descriptor ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M20 6 9 17l-5-5"></path></svg> Face Registered' : 'Register Face'}
+                            </button>
+                        </div>` : ''}
+                    </div>
+
+                    ${canEditPayroll && !isNewUser ? `
+                    <div id="salary-banking-section" class="space-y-6">
+                        <div class="p-4 border rounded-lg dark:border-gray-600">
+                            <h4 class="font-medium mb-4">Salary Information</h4>
+                            <div id="salary-form-content" class="text-center text-gray-500">Loading...</div>
+                        </div>
+                        <div class="p-4 border rounded-lg dark:border-gray-600">
+                            <h4 class="font-medium mb-4">Bank Details</h4>
+                            <div id="bank-form-content" class="text-center text-gray-500">Loading...</div>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <button type="submit" class="btn btn-primary">${isNewUser ? 'Create Employee' : 'Save Changes'}</button>
+                </form>
+            `;
+        },
         faceRegistrationModal: (user) => `
             <div id="face-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-40">
                 <div id="face-modal" class="bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-6 w-full max-w-lg text-center">
@@ -309,7 +380,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <form id="leave-request-form" class="space-y-4">
                                     <div>
                                         <label class="block text-sm mb-1">Leave Type</label>
-                                        <select name="leave_type" class="w-full input-field" required>
+                                        <select name="leave_type" class="input-field" required>
                                             <option>Annual</option>
                                             <option>Sick</option>
                                             <option>Unpaid</option>
@@ -317,10 +388,10 @@ document.addEventListener('DOMContentLoaded', () => {
                                         </select>
                                     </div>
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div><label class="block text-sm mb-1">Start Date</label><input name="start_date" type="date" class="w-full input-field" required></div>
-                                        <div><label class="block text-sm mb-1">End Date</label><input name="end_date" type="date" class="w-full input-field" required></div>
+                                        <div><label class="block text-sm mb-1">Start Date</label><input name="start_date" type="date" class="input-field" required></div>
+                                        <div><label class="block text-sm mb-1">End Date</label><input name="end_date" type="date" class="input-field" required></div>
                                     </div>
-                                    <div><label class="block text-sm mb-1">Reason</label><textarea name="reason" rows="3" class="w-full input-field" required></textarea></div>
+                                    <div><label class="block text-sm mb-1">Reason</label><textarea name="reason" rows="3" class="input-field" required></textarea></div>
                                     <button type="submit" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Submit Request</button>
                                 </form>
                             </div>
@@ -361,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
                                 <form id="run-payroll-form" class="space-y-4">
                                     <div>
                                         <label class="block text-sm mb-1">Select Month & Year</label>
-                                        <input type="month" name="period" class="w-full input-field" required>
+                                        <input type="month" name="period" class="input-field" required>
                                     </div>
                                     <button type="submit" class="w-full px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">Run Payroll</button>
                                 </form>
@@ -391,20 +462,22 @@ document.addEventListener('DOMContentLoaded', () => {
         loginForm.addEventListener('submit', handleLogin);
         const token = localStorage.getItem('accessToken');
 
-        loginView.classList.add('active');
-        appShell.classList.remove('active');
-
         if (token) {
             try {
                 const user = await apiFetch('/users/me/');
                 AppState.currentUser = user;
-                loginView.classList.remove('active');
-                appShell.classList.add('active');
+                loginView.classList.add('hidden');
+                appShell.classList.remove('hidden');
                 await initializeAppShell();
             } catch (error) {
                 console.error("Session restore failed:", error);
                 localStorage.removeItem('accessToken');
+                loginView.classList.remove('hidden');
+                appShell.classList.add('hidden');
             }
+        } else {
+            loginView.classList.remove('hidden');
+            appShell.classList.add('hidden');
         }
     }
 
@@ -431,8 +504,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const user = await apiFetch('/users/me/');
             AppState.currentUser = user;
 
-            loginView.classList.remove('active');
-            appShell.classList.add('active');
+            loginView.classList.add('hidden');
+            appShell.classList.remove('hidden');
             await initializeAppShell();
 
         } catch (error) {
@@ -453,8 +526,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
         }
-        appShell.classList.remove('active');
-        loginView.classList.add('active');
+        appShell.classList.add('hidden');
+        loginView.classList.remove('hidden');
         mainContent.innerHTML = '';
     }
 
@@ -652,9 +725,9 @@ document.addEventListener('DOMContentLoaded', () => {
             projectFormContainer.innerHTML = `
                 <h3 class="font-semibold text-lg">${project.id ? 'Edit Project' : 'New Project'}</h3>
                 <form id="project-form" class="space-y-4 mt-4">
-                    <div><label class="block mb-1 text-sm font-medium">Project Name</label><input name="name" value="${project.name}" class="w-full input-field" required></div>
+                    <div><label class="block mb-1 text-sm font-medium">Project Name</label><input name="name" value="${project.name}" class="input-field" required></div>
                     <div><label class="block mb-1 text-sm font-medium">Status</label>
-                        <select name="status" class="w-full input-field">
+                        <select name="status" class="input-field">
                             <option ${project.status === 'Active' ? 'selected' : ''}>Active</option>
                             <option ${project.status === 'Completed' ? 'selected' : ''}>Completed</option>
                             <option ${project.status === 'Cancelled' ? 'selected' : ''}>Cancelled</option>
@@ -773,79 +846,23 @@ document.addEventListener('DOMContentLoaded', () => {
         function renderEmployeeForm(userId) {
             const user = userId ? AppState.users.find(u => u.id === userId) : { id: null };
             if (!user) return;
+            const canEditPayroll = ['Super Admin', 'HR'].includes(AppState.currentUser.role);
 
-            const isNewUser = !user.id;
-            const userWorkWeek = user.work_week || [];
-            const userAllowedLocations = user.allowed_locations || [];
-
-            const workWeekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-            const allLocations = [{id: 'company', name: 'Company HQ'}, ...AppState.projects];
-
-            formContainer.innerHTML = `
-                <div class="flex justify-between items-center mb-4">
-                    <h3 class="font-semibold text-lg">${isNewUser ? 'Create New Employee' : `Edit Employee: ${user.name}`}</h3>
-                    ${!isNewUser ? `<button id="view-history-btn" class="text-sm text-blue-500 hover:underline">View History</button>` : ''}
-                </div>
-                <form id="employee-form" class="space-y-6">
-                    <div class="p-4 border rounded-lg dark:border-gray-600">
-                        <h4 class="font-medium mb-4">Job Details</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div><label class="block text-sm mb-1">Full Name</label><input name="name" value="${user.name || ''}" class="w-full input-field" required></div>
-                            <div><label class="block text-sm mb-1">Email</label><input name="email" type="email" value="${user.email || ''}" class="w-full input-field" ${!isNewUser ? 'disabled' : ''} required></div>
-                            ${isNewUser ? `<div><label class="block text-sm mb-1">Password</label><input name="password" type="password" class="w-full input-field" required></div>` : ''}
-                            <div><label class="block text-sm mb-1">Role</label>
-                                <select name="role" class="w-full input-field">
-                                    <option ${user.role === 'Employee' ? 'selected' : ''}>Employee</option>
-                                    <option ${user.role === 'HR' ? 'selected' : ''}>HR</option>
-                                    <option ${user.role === 'Admin' ? 'selected' : ''}>Admin</option>
-                                    <option ${user.role === 'Super Admin' ? 'selected' : ''}>Super Admin</option>
-                                </select>
-                            </div>
-                            <div><label class="block text-sm mb-1">Hiring Date</label><input name="hiring_date" type="date" value="${user.hiring_date || ''}" class="w-full input-field"></div>
-                            <div><label class="block text-sm mb-1">Probation End</label><input name="probation_end" type="date" value="${user.probation_end || ''}" class="w-full input-field"></div>
-                        </div>
-                    </div>
-                    <div class="p-4 border dark:border-gray-600 rounded-lg">
-                        <h4 class="font-medium mb-4">Work Schedule</h4>
-                        <div class="mb-4"><label class="block mb-2 text-sm">Work Week</label>
-                            <div class="flex flex-wrap gap-2">
-                                ${workWeekDays.map(day => `<button type="button" data-day="${day}" class="work-day-btn px-3 py-1 text-sm rounded-full ${userWorkWeek.includes(day) ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-600'}">${day}</button>`).join('')}
-                            </div>
-                        </div>
-                        <div class="grid grid-cols-2 gap-4">
-                            <div><label class="block text-sm mb-1">Start Time</label><input name="work_start_time" type="time" value="${user.work_start_time || ''}" class="w-full input-field"></div>
-                            <div><label class="block text-sm mb-1">End Time</label><input name="work_end_time" type="time" value="${user.work_end_time || ''}" class="w-full input-field"></div>
-                        </div>
-                    </div>
-                    <div class="p-4 border dark:border-gray-600 rounded-lg">
-                        <h4 class="font-medium mb-4">Permissions & Security</h4>
-                        <div class="mb-4">
-                            <h5 class="font-medium text-sm mb-2">Allowed Login Locations</h5>
-                            <div class="space-y-2">
-                                ${allLocations.map(loc => `
-                                    <label class="flex items-center"><input type="checkbox" data-location="${loc.id}" class="location-checkbox h-4 w-4" ${userAllowedLocations.includes(loc.id) ? 'checked' : ''}><span class="ml-2">${loc.name}</span></label>
-                                `).join('')}
-                            </div>
-                        </div>
-                        ${!isNewUser ? `
-                        <div>
-                             <h5 class="font-medium text-sm mb-2">Facial Recognition</h5>
-                             <button id="register-face-btn" type="button" class="px-4 py-2 text-sm text-white ${user.has_face_descriptor ? 'bg-green-600' : 'bg-gray-600'} rounded-lg hover:opacity-80 flex items-center justify-center">
-                                ${user.has_face_descriptor ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mr-2"><path d="M20 6 9 17l-5-5"></path></svg> Face Registered' : 'Register Face'}
-                             </button>
-                        </div>` : ''}
-                    </div>
-                    <button type="submit" class="px-6 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 flex items-center justify-center">${isNewUser ? 'Create Employee' : 'Save Changes'}</button>
-                </form>
-            `;
+            formContainer.innerHTML = templates.employeeForm(user, canEditPayroll);
             
-            if (!isNewUser) {
-                document.getElementById('register-face-btn').addEventListener('click', () => {
+            if (!user.id) {
+                // It's a new user, no extra actions needed
+            } else {
+                document.getElementById('register-face-btn')?.addEventListener('click', () => {
                     initializeFaceRegistrationModal(user);
                 });
-                document.getElementById('view-history-btn').addEventListener('click', () => {
+                document.getElementById('view-history-btn')?.addEventListener('click', () => {
                     initializeAuditLogModal(user);
                 });
+                if (canEditPayroll) {
+                    loadSalaryDetails(user.id);
+                    loadBankDetails(user.id);
+                }
             }
             
             const employeeForm = document.getElementById('employee-form');
@@ -864,7 +881,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 updatedData.work_week = Array.from(document.querySelectorAll('.work-day-btn.bg-blue-600')).map(btn => btn.dataset.day);
 
                 try {
-                    if (isNewUser) {
+                    if (!user.id) {
                         const newUser = await apiFetch(`/users/`, {
                             method: 'POST',
                             body: JSON.stringify(updatedData)
@@ -898,6 +915,115 @@ document.addEventListener('DOMContentLoaded', () => {
                     btn.classList.toggle('dark:bg-gray-600');
                 });
             });
+        }
+
+        async function loadSalaryDetails(userId) {
+            const container = document.getElementById('salary-form-content');
+            try {
+                const salary = await apiFetch(`/salaries/${userId}`);
+                container.innerHTML = `
+                    <form id="salary-form" class="space-y-4 text-left">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div><label class="block text-sm mb-1">Gross Salary</label><input name="gross_salary" type="number" step="0.01" value="${salary.gross_salary || ''}" class="input-field" required></div>
+                            <div><label class="block text-sm mb-1">Pay Frequency</label>
+                                <select name="pay_frequency" class="input-field">
+                                    <option ${salary.pay_frequency === 'Monthly' ? 'selected' : ''}>Monthly</option>
+                                    <option ${salary.pay_frequency === 'Weekly' ? 'selected' : ''}>Weekly</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div><label class="block text-sm mb-1">Effective Date</label><input name="effective_date" type="date" value="${salary.effective_date || ''}" class="input-field" required></div>
+                        <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save Salary</button>
+                    </form>
+                `;
+                document.getElementById('salary-form').addEventListener('submit', (e) => handleSalarySubmit(e, userId));
+            } catch (error) {
+                container.innerHTML = `
+                    <p class="text-gray-500 text-sm mb-2">No salary information found.</p>
+                    <button id="add-salary-btn" type="button" class="px-4 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700">Add Salary Info</button>
+                `;
+                document.getElementById('add-salary-btn').addEventListener('click', () => {
+                    container.innerHTML = `
+                        <form id="salary-form" class="space-y-4 text-left">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><label class="block text-sm mb-1">Gross Salary</label><input name="gross_salary" type="number" step="0.01" class="input-field" required></div>
+                                <div><label class="block text-sm mb-1">Pay Frequency</label><select name="pay_frequency" class="input-field"><option>Monthly</option><option>Weekly</option></select></div>
+                            </div>
+                            <div><label class="block text-sm mb-1">Effective Date</label><input name="effective_date" type="date" class="input-field" required></div>
+                            <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save Salary</button>
+                        </form>
+                    `;
+                    document.getElementById('salary-form').addEventListener('submit', (e) => handleSalarySubmit(e, userId));
+                });
+            }
+        }
+
+        async function handleSalarySubmit(e, userId) {
+            e.preventDefault();
+            const form = e.target;
+            const submitButton = form.querySelector('button[type="submit"]');
+            setLoadingState(submitButton, true);
+            const formData = new FormData(form);
+            const salaryData = { user_id: userId, ...Object.fromEntries(formData.entries()) };
+            try {
+                await apiFetch('/salaries/', { method: 'POST', body: JSON.stringify(salaryData) });
+                showToast('Salary details saved successfully!', 'success');
+                loadSalaryDetails(userId);
+            } catch (error) {
+                showToast(`Error saving salary: ${error.message}`, 'error');
+            } finally {
+                setLoadingState(submitButton, false);
+            }
+        }
+
+        async function loadBankDetails(userId) {
+            const container = document.getElementById('bank-form-content');
+            try {
+                const details = await apiFetch(`/bank-details/${userId}`);
+                container.innerHTML = `
+                    <form id="bank-form" class="space-y-4 text-left">
+                        <div><label class="block text-sm mb-1">Bank Name</label><input name="bank_name" value="${details.bank_name || ''}" class="input-field" required></div>
+                        <div><label class="block text-sm mb-1">Account Number</label><input name="account_number" value="${details.account_number || ''}" class="input-field" required></div>
+                        <div><label class="block text-sm mb-1">IBAN</label><input name="iban" value="${details.iban || ''}" class="input-field" required></div>
+                        <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save Bank Details</button>
+                    </form>
+                `;
+                document.getElementById('bank-form').addEventListener('submit', (e) => handleBankDetailsSubmit(e, userId));
+            } catch (error) {
+                container.innerHTML = `
+                    <p class="text-gray-500 text-sm mb-2">No bank details found.</p>
+                    <button id="add-bank-btn" type="button" class="px-4 py-2 text-sm text-white bg-green-600 rounded-lg hover:bg-green-700">Add Bank Details</button>
+                `;
+                document.getElementById('add-bank-btn').addEventListener('click', () => {
+                    container.innerHTML = `
+                         <form id="bank-form" class="space-y-4 text-left">
+                            <div><label class="block text-sm mb-1">Bank Name</label><input name="bank_name" class="input-field" required></div>
+                            <div><label class="block text-sm mb-1">Account Number</label><input name="account_number" class="input-field" required></div>
+                            <div><label class="block text-sm mb-1">IBAN</label><input name="iban" class="input-field" required></div>
+                            <button type="submit" class="px-4 py-2 text-sm text-white bg-blue-600 rounded-lg hover:bg-blue-700">Save Bank Details</button>
+                        </form>
+                    `;
+                    document.getElementById('bank-form').addEventListener('submit', (e) => handleBankDetailsSubmit(e, userId));
+                });
+            }
+        }
+        
+        async function handleBankDetailsSubmit(e, userId) {
+            e.preventDefault();
+            const form = e.target;
+            const submitButton = form.querySelector('button[type="submit"]');
+            setLoadingState(submitButton, true);
+            const formData = new FormData(form);
+            const bankData = { user_id: userId, ...Object.fromEntries(formData.entries()) };
+            try {
+                await apiFetch('/bank-details/', { method: 'POST', body: JSON.stringify(bankData) });
+                showToast('Bank details saved successfully!', 'success');
+                loadBankDetails(userId);
+            } catch (error) {
+                showToast(`Error saving bank details: ${error.message}`, 'error');
+            } finally {
+                setLoadingState(submitButton, false);
+            }
         }
 
         searchInput.addEventListener('input', () => {
@@ -954,37 +1080,50 @@ document.addEventListener('DOMContentLoaded', () => {
                 updateStatus('error', 'Please turn on the camera first.');
                 return;
             }
-            updateStatus('info', 'Verifying face...');
+            updateStatus('info', 'Getting your location...');
             setLoadingState(checkInBtn, true);
 
-            const canvas = document.createElement('canvas');
-            canvas.width = video.videoWidth;
-            canvas.height = video.videoHeight;
-            canvas.getContext('2d').drawImage(video, 0, 0);
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    updateStatus('info', 'Location acquired. Verifying face...');
+                    const { latitude, longitude } = position.coords;
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    canvas.getContext('2d').drawImage(video, 0, 0);
 
-            canvas.toBlob(async (blob) => {
-                const formData = new FormData();
-                formData.append('file', blob, 'checkin_face.jpg');
+                    canvas.toBlob(async (blob) => {
+                        const formData = new FormData();
+                        formData.append('file', blob, 'checkin_face.jpg');
+                        formData.append('latitude', latitude);
+                        formData.append('longitude', longitude);
 
-                try {
-                    const result = await apiFetch('/attendance/check-in', {
-                        method: 'POST',
-                        body: formData,
-                    });
+                        try {
+                            const result = await apiFetch('/attendance/check-in', {
+                                method: 'POST',
+                                body: formData,
+                            });
 
-                    updateStatus('success', `Check-in successful!`);
-                    AppState.checkInTime = new Date(result.check_in_time);
-                    document.getElementById('check-in-time').textContent = AppState.checkInTime.toLocaleTimeString();
-                    checkInBtn.classList.add('hidden');
-                    checkOutBtn.classList.remove('hidden');
+                            updateStatus('success', `Check-in successful!`);
+                            AppState.checkInTime = new Date(result.check_in_time);
+                            document.getElementById('check-in-time').textContent = AppState.checkInTime.toLocaleTimeString();
+                            checkInBtn.classList.add('hidden');
+                            checkOutBtn.classList.remove('hidden');
 
-                } catch (error) {
-                    updateStatus('error', `Check-in failed: ${error.message}`);
-                } finally {
-                    stopCamera();
+                        } catch (error) {
+                            updateStatus('error', `Check-in failed: ${error.message}`);
+                        } finally {
+                            stopCamera();
+                            setLoadingState(checkInBtn, false);
+                        }
+                    }, 'image/jpeg');
+                },
+                (error) => {
+                    updateStatus('error', 'Could not get location. Please enable location services.');
                     setLoadingState(checkInBtn, false);
                 }
-            }, 'image/jpeg');
+            );
         }
 
         function handleCheckOut() {
@@ -1008,10 +1147,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const statusDiv = document.getElementById('status-message');
             if (!statusDiv) return;
             statusDiv.textContent = message;
-            statusDiv.className = 'p-4 rounded-lg border-l-4 flex items-center';
-            if (type === 'success') statusDiv.classList.add('bg-green-100', 'dark:bg-green-900', 'border-green-500');
-            else if (type === 'error') statusDiv.classList.add('bg-red-100', 'dark:bg-red-900', 'border-red-500');
-            else statusDiv.classList.add('bg-blue-100', 'dark:bg-blue-900', 'border-blue-500');
+            statusDiv.className = 'p-4 rounded-lg border-l-4 flex items-center'; // Reset classes
+            if (type === 'success') statusDiv.classList.add('bg-green-100', 'dark:bg-green-900', 'border-green-500', 'text-green-800', 'dark:text-green-200');
+            else if (type === 'error') statusDiv.classList.add('bg-red-100', 'dark:bg-red-900', 'border-red-500', 'text-red-800', 'dark:text-red-200');
+            else statusDiv.classList.add('bg-blue-100', 'dark:bg-blue-900', 'border-blue-500', 'text-blue-800', 'dark:text-blue-200');
         }
     }
     
@@ -1059,20 +1198,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 formData.append('file', blob, 'face.jpg');
 
                 try {
-                    const token = localStorage.getItem('accessToken');
-                    const headers = { 'Authorization': `Bearer ${token}` };
-                    const response = await fetch(`${API_BASE_URL}/users/${user.id}/register-face`, {
+                    const updatedUser = await apiFetch(`/users/${user.id}/register-face`, {
                         method: 'POST',
-                        body: formData,
-                        headers: headers
+                        body: formData
                     });
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.detail || 'An API error occurred');
-                    }
-                    
-                    const updatedUser = await response.json();
                     
                     const userIndex = AppState.users.findIndex(u => u.id === user.id);
                     AppState.users[userIndex] = updatedUser;
@@ -1364,6 +1493,13 @@ document.addEventListener('DOMContentLoaded', () => {
     async function initializeWorkflowModule() {
         const instancesList = document.getElementById('workflow-instances-list');
         
+        document.getElementById('manage-templates-btn').addEventListener('click', () => {
+            showToast('Managing templates is not yet implemented.', 'info');
+        });
+        document.getElementById('start-workflow-btn').addEventListener('click', () => {
+            showToast('Starting a new workflow is not yet implemented.', 'info');
+        });
+
         async function renderInstances() {
             try {
                 const instances = await apiFetch('/workflow-instances/');

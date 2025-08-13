@@ -1,13 +1,14 @@
 # services/svc-hrms-core/app/main.py
 
-from fastapi import Depends, FastAPI, HTTPException, status, File, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, status, File, UploadFile, Form
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from fastapi.middleware.cors import CORSMiddleware
 from jose import JWTError, jwt
-from typing import List
+from typing import List, Optional
 from datetime import date, timedelta
 import calendar
+from math import radians, sin, cos, sqrt, atan2
 
 # --- MODIFIED: Import rekognition_service instead of face_service ---
 from . import auth, crud, models, schemas, rekognition_service
@@ -26,6 +27,7 @@ async def on_startup():
 # --- Security & CORS (Unchanged) ---
 origins = [
     "http://localhost",
+    "http://localhost:8001",
     "http://localhost:8000",
     "http://127.0.0.1:5500",
     "https://ecstasyosfrontendstorage.z1.web.core.windows.net",
@@ -41,13 +43,25 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# --- MODIFIED: Helper function to map User model to User schema ---
+# --- Helper Functions ---
+def haversine(lat1, lon1, lat2, lon2):
+    """Calculate the distance between two points on Earth in meters."""
+    R = 6371000  # Radius of Earth in meters
+    lat1_rad, lon1_rad, lat2_rad, lon2_rad = map(radians, [lat1, lon1, lat2, lon2])
+
+    dlon = lon2_rad - lon1_rad
+    dlat = lat2_rad - lat1_rad
+
+    a = sin(dlat / 2)**2 + cos(lat1_rad) * cos(lat2_rad) * sin(dlon / 2)**2
+    c = 2 * atan2(sqrt(a), sqrt(1 - a))
+    distance = R * c
+    return distance
+
 def map_user_to_schema(user_model: models.User) -> schemas.User:
     user_data = schemas.User.from_orm(user_model).dict()
     user_data['has_face_descriptor'] = (user_model.rekognition_face_id is not None)
     return schemas.User(**user_data)
 
-# --- THIS IS THE MISSING FUNCTION ---
 def map_project_to_schema(project_model: models.Project) -> schemas.Project:
     """Helper function to correctly format the project response."""
     return schemas.Project(
@@ -59,7 +73,6 @@ def map_project_to_schema(project_model: models.Project) -> schemas.Project:
         updated_at=project_model.updated_at
     )
 
-# --- Dependency for getting current user (Unchanged) ---
 async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -86,8 +99,6 @@ async def get_current_active_user(token: str = Depends(oauth2_scheme), db: Sessi
 # ===================================================================
 # API ENDPOINTS
 # ===================================================================
-
-# ... (Token, User creation, etc. remain unchanged) ...
 
 @app.post("/token", response_model=schemas.Token)
 async def login_for_access_token(db: Session = Depends(get_db), form_data: OAuth2PasswordRequestForm = Depends()):
@@ -121,127 +132,118 @@ def update_user_profile(user_id: int, user_update: schemas.UserUpdate, db: Sessi
         raise HTTPException(status_code=404, detail="User not found")
     return map_user_to_schema(updated_user)
 
-
-# --- MODIFIED: /register-face endpoint to use Rekognition ---
 @app.post("/users/{user_id}/register-face", response_model=schemas.User)
 async def register_face(user_id: int, db: Session = Depends(get_db), file: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-
     db_user = crud.get_user(db, user_id=user_id)
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # A user can only have one face registered.
     if db_user.rekognition_face_id:
-        raise HTTPException(status_code=400, detail="User already has a registered face. Please remove it first to add a new one.")
-
+        raise HTTPException(status_code=400, detail="User already has a registered face.")
     try:
         image_data = await file.read()
-        # Index the face in the Rekognition collection
         face_id = rekognition_service.index_face(image_bytes=image_data)
-
-        # Save the returned FaceId to the user's profile
         crud.update_user(db, user_id=user_id, user_update=schemas.UserUpdate(rekognition_face_id=face_id), actor=current_user)
-        
-        # Log this action
         crud.register_user_face(db, user_id=user_id, actor=current_user)
-        
         updated_user = crud.get_user(db, user_id=user_id)
         return map_user_to_schema(updated_user)
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Amazon Rekognition failed: {str(e)}")
 
-
-# --- MODIFIED: /check-in endpoint to use Rekognition ---
+# --- MODIFIED: /check-in endpoint to include geolocation ---
 @app.post("/attendance/check-in", response_model=schemas.AttendanceRecord)
-async def check_in(db: Session = Depends(get_db), file: UploadFile = File(...), current_user: models.User = Depends(get_current_active_user)):
+async def check_in(
+    db: Session = Depends(get_db), 
+    current_user: models.User = Depends(get_current_active_user),
+    file: UploadFile = File(...), 
+    latitude: float = Form(...),
+    longitude: float = Form(...)
+):
+    # 1. Face verification (unchanged)
     if not current_user.rekognition_face_id:
         raise HTTPException(status_code=400, detail="No face registered for this user.")
-
     try:
         image_data = await file.read()
-        # Search for the face in the collection
         matched_face_id = rekognition_service.search_for_face(image_bytes=image_data)
-
-        # Verify if the matched face belongs to the current user
         if matched_face_id != current_user.rekognition_face_id:
-            # This is a critical security check. The face matched someone, but not the person logged in.
-            raise HTTPException(status_code=401, detail="Face verification failed. The detected face does not belong to the logged-in user.")
-
+            raise HTTPException(status_code=401, detail="Face verification failed. Face does not match.")
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Face verification failed: {str(e)}")
 
-    # If verification is successful, create the check-in record
+    # 2. Geolocation verification (NEW)
+    allowed_locations_coords = []
+    if "company" in current_user.allowed_locations:
+        company = crud.get_company(db)
+        if company:
+            allowed_locations_coords.append((company.location_lat, company.location_lng))
+    
+    for loc_id in current_user.allowed_locations:
+        if loc_id != "company":
+            project = crud.get_project(db, project_id=loc_id)
+            if project:
+                allowed_locations_coords.append((project.location_lat, project.location_lng))
+
+    if not allowed_locations_coords:
+         raise HTTPException(status_code=403, detail="You are not assigned to any check-in locations.")
+
+    is_in_allowed_location = False
+    for loc_lat, loc_lng in allowed_locations_coords:
+        distance = haversine(latitude, longitude, loc_lat, loc_lng)
+        if distance <= 500:  # Allow check-in within a 500-meter radius
+            is_in_allowed_location = True
+            break
+    
+    if not is_in_allowed_location:
+        raise HTTPException(status_code=403, detail="Check-in failed. You are not at an approved work location.")
+
+    # 3. Create check-in record (unchanged)
     record = crud.create_check_in(db, user_id=current_user.id)
     return record
 
-
-# ... (All other endpoints for Company, Projects, Audit, Leave, Workflows, and Payroll remain unchanged) ...
 @app.get("/company/", response_model=schemas.Company)
 def read_company(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     company = crud.get_company(db)
     if company is None:
-        # If no company profile exists, create a default one
         default_company_data = schemas.CompanyUpdate(
-            name="Default Company",
-            address="Not Set",
-            location=schemas.Location(lat=0.0, lng=0.0)
+            name="Default Company", address="Not Set", location=schemas.Location(lat=0.0, lng=0.0)
         )
         company = crud.create_or_update_company(db, company=default_company_data, actor=current_user)
-
     return schemas.Company(
-        id=company.id,
-        name=company.name,
-        address=company.address,
+        id=company.id, name=company.name, address=company.address,
         location=schemas.Location(lat=company.location_lat, lng=company.location_lng),
-        created_at=company.created_at,
-        updated_at=company.updated_at
+        created_at=company.created_at, updated_at=company.updated_at
     )
-
 
 @app.put("/company/", response_model=schemas.Company)
 def update_company_profile(company_update: schemas.CompanyUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role != "Super Admin":
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    # The crud function returns the updated SQLAlchemy model object
     updated_company_model = crud.create_or_update_company(db, company=company_update, actor=current_user)
-
-    # Manually build the Pydantic response model from the SQLAlchemy object
     return schemas.Company(
-        id=updated_company_model.id,
-        name=updated_company_model.name,
-        address=updated_company_model.address,
+        id=updated_company_model.id, name=updated_company_model.name, address=updated_company_model.address,
         location=schemas.Location(lat=updated_company_model.location_lat, lng=updated_company_model.location_lng),
-        created_at=updated_company_model.created_at,
-        updated_at=updated_company_model.updated_at
+        created_at=updated_company_model.created_at, updated_at=updated_company_model.updated_at
     )
 
 @app.get("/projects/", response_model=List[schemas.Project])
 def read_projects(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     projects = crud.get_projects(db)
-    # Use the helper function to map each project
     return [map_project_to_schema(p) for p in projects]
 
-# --- CORRECTED: This endpoint now also manually builds the response ---
 @app.put("/projects/{project_id}", response_model=schemas.Project)
 def update_project_details(project_id: str, project_update: schemas.ProjectCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "Admin"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-    
-    # Check if the project exists to decide whether to create or update
     db_project_model = crud.get_project(db, project_id=project_id)
-    
     if db_project_model:
-        # Update existing project
         updated_project_model = crud.update_project(db, project_id=project_id, project_update=project_update, actor=current_user)
         return map_project_to_schema(updated_project_model)
     else:
-        # Create new project
         new_project_model = crud.create_project(db, project=project_update, actor=current_user)
         return map_project_to_schema(new_project_model)
 
+# ... (Rest of the file is unchanged) ...
 @app.get("/audit-logs/{target_type}/{target_id}", response_model=List[schemas.AuditLog])
 def get_logs_for_target(target_type: str, target_id: str, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "Admin", "HR"]:
@@ -367,18 +369,14 @@ def read_bank_details_for_user(user_id: int, db: Session = Depends(get_db), curr
 def run_payroll_for_month(year: int, month: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
-
-    all_users = crud.get_users(db, limit=1000) # Get all users
+    all_users = crud.get_users(db, limit=1000)
     generated_payslips = []
-
     for user in all_users:
         salary = crud.get_current_salary_for_user(db, user_id=user.id)
         if not salary:
-            continue # Skip users without salary info
-
+            continue
         deductions = 0.0
         unpaid_leave_requests = db.query(models.LeaveRequest).filter(
             models.LeaveRequest.owner_id == user.id,
@@ -387,28 +385,21 @@ def run_payroll_for_month(year: int, month: int, db: Session = Depends(get_db), 
             models.LeaveRequest.start_date <= end_date,
             models.LeaveRequest.end_date >= start_date
         ).all()
-
-        daily_rate = salary.gross_salary / 30 # Simplified daily rate
+        daily_rate = salary.gross_salary / 30
         for req in unpaid_leave_requests:
             overlap_start = max(req.start_date, start_date)
             overlap_end = min(req.end_date, end_date)
             if overlap_end >= overlap_start:
                 unpaid_days = (overlap_end - overlap_start).days + 1
                 deductions += unpaid_days * daily_rate
-
         net_salary = salary.gross_salary - deductions
-
         payslip_data = schemas.PayslipBase(
-            pay_period_start=start_date,
-            pay_period_end=end_date,
-            gross_salary=salary.gross_salary,
-            deductions=round(deductions, 2),
-            net_salary=round(net_salary, 2),
-            status="Generated"
+            pay_period_start=start_date, pay_period_end=end_date,
+            gross_salary=salary.gross_salary, deductions=round(deductions, 2),
+            net_salary=round(net_salary, 2), status="Generated"
         )
         payslip = crud.create_payslip(db, payslip_data=payslip_data, user_id=user.id)
         generated_payslips.append(payslip)
-
     return generated_payslips
 
 @app.get("/payslips/me", response_model=List[schemas.Payslip])
@@ -419,10 +410,8 @@ def read_my_payslips(db: Session = Depends(get_db), current_user: models.User = 
 def read_payslips_for_period(year: int, month: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_active_user)):
     if current_user.role not in ["Super Admin", "HR"]:
         raise HTTPException(status_code=403, detail="Not enough permissions")
-
     start_date = date(year, month, 1)
     end_date = date(year, month, calendar.monthrange(year, month)[1])
-
     payslips_with_names = crud.get_all_payslips_for_period(db, start_date=start_date, end_date=end_date)
     return [
         schemas.Payslip(

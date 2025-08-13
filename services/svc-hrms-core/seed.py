@@ -20,7 +20,7 @@ def seed_data():
 
     try:
         # 1. Check if the Super Admin already exists
-        super_admin = crud.get_user_by_email(db, email="shafiq@ecstasyholding.com")
+        super_admin = crud.get_user_by_email(db, email="sysadmin@metamorphic.ae")
         if super_admin:
             print("Super Admin user already exists. Seeding has likely been completed before. Aborting.")
             return
@@ -31,7 +31,7 @@ def seed_data():
         hashed_password = get_password_hash("admin123") 
         
         db_user = models.User(
-            email="shafiq@ecstasyholding.com",
+            email="sysadmin@metamorphic.ae",
             hashed_password=hashed_password,
             name="Default Admin",
             role="Super Admin",
@@ -81,7 +81,7 @@ def seed_data():
         company_profile = crud.get_company(db)
         if not company_profile:
             company_data = schemas.CompanyUpdate(
-                name="Metamorphic LLC",
+                name="6T3 Media Partners",
                 address="AL Barsha, Dubai, UAE",
                 location=schemas.Location(lat=25.08, lng=55.22) # Default to Business Bay, Dubai
             )
