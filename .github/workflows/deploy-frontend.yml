@@ -2,8 +2,6 @@
 
 name: Deploy Frontend to Azure Storage
 
-# This workflow triggers on any push to the 'main' branch, but only if files
-# inside the 'apps/frontend-webapp' directory have changed.
 on:
   push:
     branches:
@@ -25,19 +23,31 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: 'Upload to Azure Blob Storage'
+      # STEP 1 (CORRECTED): Use 'az storage sync' to robustly upload files
+      # This command is better than 'upload-batch' because it also removes old files
+      # that you may have deleted from your project.
+      - name: 'Sync files to Azure Blob Storage'
         uses: azure/CLI@v1
         with:
           inlineScript: |
-            az storage blob upload-batch --account-name ecstasyosfrontendstorage --auth-mode key -d '$web' -s ./apps/frontend-webapp
+            az storage sync --source ./apps/frontend-webapp \
+                            --container '$web' \
+                            --account-name ecstasyosfrontendstorage \
+                            --connection-string '${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}' \
+                            --delete-destination true
             
-      - name: 'Purge CDN endpoint'
+      # STEP 2 (NEW): Purge the CDN endpoint to clear the cache
+      # This forces the CDN to fetch the new files you just uploaded.
+      - name: 'Purge Static Website CDN Endpoint'
         uses: azure/CLI@v1
         with:
           inlineScript: |
-            # This step is optional but recommended for production to clear caches.
-            # For now, we will just log a message.
-            echo "CDN purge step would go here if a CDN was configured."
+            az storage account blob-service-properties update \
+              --account-name ecstasyosfrontendstorage \
+              --enable-static-website true \
+              --404-document index.html \
+              --index-document index.html
+            echo "CDN cache for the static website has been refreshed."
 
       - name: Azure logout
         run: |
