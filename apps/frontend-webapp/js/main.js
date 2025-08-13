@@ -4,8 +4,8 @@
 document.addEventListener('DOMContentLoaded', () => {
 
     // --- 1. CONFIGURATION & STATE ---
-    const API_BASE_URL = 'http://127.0.0.1:8000'; // For local testing
-    // const API_BASE_URL = 'https://ecstasyos-hrms-api.azurewebsites.net'; // For production
+    //const API_BASE_URL = 'http://127.0.0.1:8000'; // For local testing
+    const API_BASE_URL = 'https://ecstasyos-hrms-api.azurewebsites.net'; // For production
 
     const AppState = {
         currentUser: null,
